@@ -1,0 +1,43 @@
+# Scenario 3: a sandbox with no user delegation. The subject_token
+# credential is optional, so the provider can be created without one —
+# the gateway then has nothing to exchange, and no token is minted.
+id: zt2-nodelegation
+display_name: Zero Trust v2 - no delegation
+description: Sandbox without a user subject token; token exchange must be denied
+category: other
+credentials:
+  - name: subject_token
+    description: User subject token; absent for this provider
+    required: false
+  - name: access_token
+    description: Access token obtained via RFC 8693 token exchange
+    required: false
+    auth_style: bearer
+    header_name: Authorization
+    token_grant:
+      grant_type: token_exchange
+      token_endpoint: http://token-issuer.zt-demo.svc:8080/token
+      audience: engineering
+      jwt_svid_audience: http://token-issuer.zt-demo.svc:8080
+      client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-spiffe
+      scopes: [engineering]
+      cache_ttl_seconds: 60
+      subject_token:
+        source: provider_credential
+        credential: subject_token
+        subject_token_type: urn:ietf:params:oauth:token-type:access_token
+      audience_overrides:
+        - host: document-engineering
+          port: 8080
+          audience: engineering
+          scopes: [engineering]
+endpoints:
+  - host: document-engineering
+    port: 8080
+    protocol: rest
+    tls: none
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl
+  - /usr/local/bin/curl

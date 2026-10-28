@@ -13,7 +13,11 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	cfg, err := config.Load("config/users.yaml")
+	usersFile := os.Getenv("USERS_FILE")
+	if usersFile == "" {
+		usersFile = "config/users.yaml"
+	}
+	cfg, err := config.Load(usersFile)
 	if err != nil {
 		logger.Error("load config", "err", err)
 		os.Exit(1)

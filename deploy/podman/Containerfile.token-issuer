@@ -1,0 +1,15 @@
+# Adapted from OpenShell examples/spiffe-token-exchange-demo (NVIDIA,
+# Apache-2.0). Static Go binary on distroless, non-root, port 8080.
+FROM golang:1.27 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/token-issuer ./token-issuer
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/token-issuer /token-issuer
+COPY config/users.yaml /config/users.yaml
+EXPOSE 8080
+USER nonroot
+ENTRYPOINT ["/token-issuer"]
