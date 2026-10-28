@@ -1,0 +1,10 @@
+# Binaries
+bin/
+token-issuer/token-issuer
+document-service/document-service
+
+# Local state
+*.log
+.env
+.superpowers/
+.DS_Store

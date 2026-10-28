@@ -1,0 +1,10 @@
+users:
+  - id: alice
+    name: Alice
+    departments: [engineering, finance]
+  - id: bob
+    name: Bob
+    departments: [finance, admin]
+  - id: carol
+    name: Carol
+    departments: [hr]
