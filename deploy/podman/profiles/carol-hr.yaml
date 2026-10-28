@@ -2,7 +2,7 @@
 # Capabilities are profile-configured, never sandbox-chosen: the
 # audience names the target service, the scopes name this sandbox's
 # capability.
-id: zt2-carol-hr
+id: zt2-carol-hr-v2
 display_name: Zero Trust v2 - Carol (hr capability)
 description: Alice's subject token exchanged by the gateway for an hr capability sandbox
 category: other
@@ -28,12 +28,12 @@ credentials:
         credential: subject_token
         subject_token_type: urn:ietf:params:oauth:token-type:access_token
       audience_overrides:
-        - host: 192.168.127.254
+        - host: 192.168.127.254.nip.io
           port: 18104
           audience: hr
           scopes: [hr]
 endpoints:
-  - host: 192.168.127.254
+  - host: 192.168.127.254.nip.io
     port: 18104
     allowed_ips: [192.168.127.254]
     protocol: rest

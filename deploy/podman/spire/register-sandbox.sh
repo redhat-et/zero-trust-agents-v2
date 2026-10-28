@@ -40,4 +40,11 @@ for selector in "${selectors[@]}"; do
 done
 
 printf "Registering sandbox SPIFFE entry: %s\n" "$SANDBOX_SPIFFE_ID" >&2
-podman exec "$SPIRE_SERVER_CONTAINER" "$SPIRE_SERVER_BIN" "${args[@]}"
+# Idempotent: a matching entry from a previous run is fine.
+if podman exec "$SPIRE_SERVER_CONTAINER" "$SPIRE_SERVER_BIN" \
+    entry show -socketPath "$SPIRE_SERVER_SOCKET" -spiffeID "$SANDBOX_SPIFFE_ID" 2>/dev/null |
+    grep -q "SPIFFE ID"; then
+    printf "entry already exists, skipping\n" >&2
+else
+    podman exec "$SPIRE_SERVER_CONTAINER" "$SPIRE_SERVER_BIN" "${args[@]}"
+fi

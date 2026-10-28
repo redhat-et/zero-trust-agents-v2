@@ -1,7 +1,7 @@
 # Scenario 3: a sandbox with no user delegation. The subject_token
 # credential is optional, so the provider can be created without one —
 # the gateway then has nothing to exchange, and no token is minted.
-id: zt2-nodelegation
+id: zt2-nodelegation-v2
 display_name: Zero Trust v2 - no delegation
 description: Sandbox without a user subject token; token exchange must be denied
 category: other
@@ -27,12 +27,12 @@ credentials:
         credential: subject_token
         subject_token_type: urn:ietf:params:oauth:token-type:access_token
       audience_overrides:
-        - host: 192.168.127.254
+        - host: 192.168.127.254.nip.io
           port: 18101
           audience: engineering
           scopes: [engineering]
 endpoints:
-  - host: 192.168.127.254
+  - host: 192.168.127.254.nip.io
     port: 18101
     allowed_ips: [192.168.127.254]
     protocol: rest

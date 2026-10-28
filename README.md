@@ -5,9 +5,51 @@ where **the agent is an OpenShell sandbox**: SPIFFE workload identity on
 sandboxes, RFC 8693 token exchange through the OpenShell gateway, and
 permission intersection enforced cryptographically at token-mint time.
 
-Successor to [zero-trust-agent-demo](https://github.com/redhat-et/zero-trust-agent-demo) (v1).
+Successor to [zero-trust-agent-demo](https://github.com/redhat-et/zero-trust-agent-demo)
+(v1), which enforced the same property with OPA at request time.
 
-Status: under development — Stage 1 (Podman) in progress.
+## Scenario matrix
 
-See `docs/superpowers/specs/` for the design and `docs/` for demo docs
-(as they land).
+| # | User  | Capability | Target          | Result |
+|---|-------|------------|-----------------|--------|
+| 1 | Alice | engineering | engineering doc | ✅ |
+| 2 | Alice | hr          | engineering doc | ❌ no intersection |
+| 3 | —     | engineering | engineering doc | ❌ no delegation |
+| 4 | Carol | hr          | hr doc          | ✅ |
+| 5 | rogue | —           | any             | ❌ unregistered SPIFFE ID |
+| 6 | Alice | engineering | finance doc     | ❌ audience mismatch |
+
+## Quick start (macOS, podman machine)
+
+Requirements: podman (machine running), `openshell` CLI 0.1.6, Go 1.22+,
+curl, python3.
+
+```console
+$ make build          # Go services
+$ scripts/setup.sh    # SPIRE + gateway + services + profiles
+$ scripts/scenario1.sh
+  ...
+$ scripts/teardown.sh
+```
+
+The setup script adds one line to the podman VM's `/etc/hosts`
+(`token-issuer.zt-demo.svc`); teardown explains how to remove it.
+
+## Documentation
+
+- `docs/ARCHITECTURE.md` — components, token flow, claim schema
+- `docs/DEMO_SCENARIOS.md` — the six scenarios and what each proves
+- `docs/LEARNING_GUIDE.md` — guided tour of the security ideas
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `token-issuer/` | Go token issuer (subject tokens, RFC 8693 exchanges, SVID verification) |
+| `document-service/` | Go protected resource server, one instance per department |
+| `deploy/podman/` | SPIRE configs, gateway/services scripts, provider profiles |
+| `scripts/` | setup, teardown, and one script per scenario |
+| `config/users.yaml` | demo users and departments |
+
+Derived from NVIDIA's OpenShell `spiffe-token-exchange-demo` (Apache-2.0)
+and the v1 demo's document/user data. License: Apache-2.0.
