@@ -128,13 +128,21 @@ func (v *jwksVerifier) VerifySVID(jwt string, subjectPrefix string) (tokens.Clai
 		if len(sig) != 64 {
 			return nil, fmt.Errorf("ES256 signature must be 64 bytes, got %d", len(sig))
 		}
-		pub := &ecdsa.PublicKey{Curve: elliptic.P256()}
-		pub.X, pub.Y = new(big.Int), new(big.Int)
-		if err := setBigIntFromB64(pub.X, key.X); err != nil {
+		x, err := b64ToBytes(key.X)
+		if err != nil {
 			return nil, err
 		}
-		if err := setBigIntFromB64(pub.Y, key.Y); err != nil {
+		y, err := b64ToBytes(key.Y)
+		if err != nil {
 			return nil, err
+		}
+		point := make([]byte, 0, 1+len(x)+len(y))
+		point = append(point, 4)
+		point = append(point, x...)
+		point = append(point, y...)
+		pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), point)
+		if err != nil {
+			return nil, fmt.Errorf("parse EC public key: %w", err)
 		}
 		r := new(big.Int).SetBytes(sig[:32])
 		s := new(big.Int).SetBytes(sig[32:])
@@ -145,15 +153,15 @@ func (v *jwksVerifier) VerifySVID(jwt string, subjectPrefix string) (tokens.Clai
 		if key.Kty != "RSA" {
 			return nil, fmt.Errorf("jwks key %q is not RSA", hdr.Kid)
 		}
-		n := new(big.Int)
-		if err := setBigIntFromB64(n, key.N); err != nil {
+		nBytes, err := b64ToBytes(key.N)
+		if err != nil {
 			return nil, err
 		}
 		eBytes, err := base64.RawURLEncoding.DecodeString(key.E)
 		if err != nil {
 			return nil, fmt.Errorf("decode rsa exponent: %w", err)
 		}
-		pub := &rsa.PublicKey{N: n, E: int(new(big.Int).SetBytes(eBytes).Int64())}
+		pub := &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: int(new(big.Int).SetBytes(eBytes).Int64())}
 		if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, digest[:], sig); err != nil {
 			return nil, fmt.Errorf("svid signature validation failed")
 		}
@@ -184,11 +192,10 @@ func (v *jwksVerifier) VerifySVID(jwt string, subjectPrefix string) (tokens.Clai
 	return claims, nil
 }
 
-func setBigIntFromB64(dst *big.Int, b64 string) error {
+func b64ToBytes(b64 string) ([]byte, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(b64)
 	if err != nil {
-		return fmt.Errorf("decode jwk coordinate: %w", err)
+		return nil, fmt.Errorf("decode jwk coordinate: %w", err)
 	}
-	dst.SetBytes(raw)
-	return nil
+	return raw, nil
 }

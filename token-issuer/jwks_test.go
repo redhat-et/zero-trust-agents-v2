@@ -48,16 +48,22 @@ func jwksServer(t *testing.T) (*httptest.Server, *ecdsa.PrivateKey, *rsa.Private
 		t.Fatal(err)
 	}
 	b64 := base64.RawURLEncoding
+	point, err := ecKey.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Uncompressed point: 0x04 || X || Y, 32-byte coordinates on P-256.
+	x, y := point[1:33], point[33:65]
 	keys := map[string]any{
 		"keys": []jwksKey{
 			{
 				Kty: "EC", Crv: "P-256", Kid: "ec-1",
-				X: b64.EncodeToString(ecKey.PublicKey.X.Bytes()),
-				Y: b64.EncodeToString(ecKey.PublicKey.Y.Bytes()),
+				X: b64.EncodeToString(x),
+				Y: b64.EncodeToString(y),
 			},
 			{
 				Kty: "RSA", Kid: "rsa-1",
-				N: b64.EncodeToString(rsaKey.PublicKey.N.Bytes()),
+				N: b64.EncodeToString(rsaKey.N.Bytes()),
 				E: b64.EncodeToString([]byte{1, 0, 1}),
 			},
 		},
