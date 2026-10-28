@@ -22,7 +22,8 @@ func main() {
 		logger.Error("load config", "err", err)
 		os.Exit(1)
 	}
-	srv := NewServer(cfg, nil)
+	jwks := NewJWKSVerifier(cfg.JWKSURI, cfg.SPIREIssuer, cfg.SVIDAudience)
+	srv := NewServer(cfg, jwks)
 	logger.Info("token issuer listening", "addr", cfg.ListenAddr)
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("serve", "err", err)

@@ -15,13 +15,23 @@ require_cmd openssl
 IMAGE_PREFIX="${IMAGE_PREFIX:-localhost/zt2}"
 NETWORK="${PODMAN_NETWORK}"
 TOKEN_ISSUER_CONTAINER="${TOKEN_ISSUER_CONTAINER:-zt2-token-issuer}"
-TOKEN_ISSUER_PORT="${TOKEN_ISSUER_PORT:-18090}"
 STATE_DIR="${STATE_DIR:-$(mktemp -d)}"
 
 # The issuer's URL as seen from the gateway/sandboxes on the network.
 # Plain HTTP token endpoints pass OpenShell profile lint only for
-# loopback or *.svc hosts, hence the .svc alias.
+# loopback or *.svc hosts, hence the .svc alias. The issuer is published
+# on host port 8080 and the VM maps token-issuer.zt-demo.svc to
+# host.containers.internal, so the supervisor (host netns) and the
+# gateway (zt2 network) both resolve the same name and port.
 TOKEN_ISSUER_BASE_URL="${TOKEN_ISSUER_BASE_URL:-http://token-issuer.zt-demo.svc:8080}"
+TOKEN_ISSUER_HOST_PORT="${TOKEN_ISSUER_HOST_PORT:-8080}"
+
+# Document services are published on distinct host ports and reached via
+# host.containers.internal (the supervisor's netns cannot resolve podman
+# network aliases, and the sandbox's policy DNS resolves declared
+# endpoint hosts through the supervisor's system resolver).
+DOC_PORTS=("18101" "18102" "18103" "18104" "18105")
+DOC_DEPTS=("engineering" "finance" "admin" "hr" "public")
 
 ACCESS_TOKEN_SECRET="${ACCESS_TOKEN_SECRET:-$(openssl rand -hex 32)}"
 export ACCESS_TOKEN_SECRET
@@ -33,13 +43,12 @@ cleanup_container "$TOKEN_ISSUER_CONTAINER"
 for dept in engineering finance admin hr public; do
     cleanup_container "zt2-document-${dept}"
 done
-
 printf "Starting token issuer: %s\n" "$TOKEN_ISSUER_CONTAINER" >&2
 run podman run -d \
     --name "$TOKEN_ISSUER_CONTAINER" \
     --network "$NETWORK" \
     --network-alias token-issuer.zt-demo.svc \
-    -p "127.0.0.1:${TOKEN_ISSUER_PORT}:8080" \
+    -p "127.0.0.1:${TOKEN_ISSUER_HOST_PORT}:8080" \
     -v "${REPO_ROOT}/config/users.yaml:/config/users.yaml:ro,z" \
     -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
     -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
@@ -52,23 +61,35 @@ run podman run -d \
     -e "USERS_FILE=/config/users.yaml" \
     "${IMAGE_PREFIX}/token-issuer"
 
-if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_PORT}/healthz" "token issuer"; then
+if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_HOST_PORT}/healthz" "token issuer"; then
     podman logs "$TOKEN_ISSUER_CONTAINER" >&2 || true
     exit 1
 fi
 
-for dept in engineering finance admin hr public; do
-    printf "Starting document service: %s\n" "zt2-document-${dept}" >&2
+for i in "${!DOC_DEPTS[@]}"; do
+    dept="${DOC_DEPTS[$i]}"
+    port="${DOC_PORTS[$i]}"
+    printf "Starting document service: %s (host port %s)\n" "zt2-document-${dept}" "$port" >&2
     run podman run -d \
         --name "zt2-document-${dept}" \
         --network "$NETWORK" \
         --network-alias "document-${dept}" \
+        -p "127.0.0.1:${port}:8080" \
         -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
         -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
         -e "DEPARTMENT=${dept}" \
         -e "PORT=:8080" \
         "${IMAGE_PREFIX}/document-service"
 done
+
+# Map the issuer's .svc name for the supervisor's netns (host network in
+# the podman VM): the supervisor cannot resolve podman network aliases,
+# and the token endpoint's host must pass profile lint (.svc shape).
+# Upstream's README sanctions a hosts entry for exactly this case.
+if ! podman machine ssh "grep -q token-issuer.zt-demo.svc /etc/hosts" 2>/dev/null; then
+    printf "Adding token-issuer.zt-demo.svc to the podman VM's /etc/hosts\n" >&2
+    podman machine ssh "sudo sh -c 'echo 192.168.127.254 token-issuer.zt-demo.svc >> /etc/hosts'"
+fi
 
 printf "%s\n" "$ACCESS_TOKEN_SECRET" >"${STATE_DIR}/access-token-secret"
 printf "\nDemo services are up.\n"

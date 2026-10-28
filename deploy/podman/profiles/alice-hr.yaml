@@ -28,15 +28,15 @@ credentials:
         credential: subject_token
         subject_token_type: urn:ietf:params:oauth:token-type:access_token
       audience_overrides:
-        - host: document-engineering
-          port: 8080
+        - host: 192.168.127.254
+          port: 18101
           audience: engineering
           scopes: [hr]
 endpoints:
-  - host: document-engineering
-    port: 8080
+  - host: 192.168.127.254
+    port: 18101
+    allowed_ips: [192.168.127.254]
     protocol: rest
-    tls: none
     access: read-write
     enforcement: enforce
 binaries:

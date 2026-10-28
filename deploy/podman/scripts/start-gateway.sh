@@ -17,9 +17,9 @@ require_cmd openssl
 require_cmd curl
 
 GATEWAY_CONTAINER="${GATEWAY_CONTAINER:-zt2-gateway}"
-GATEWAY_IMAGE="${GATEWAY_IMAGE:-ghcr.io/nvidia/openshell/gateway:latest}"
-GATEWAY_PORT="${GATEWAY_PORT:-18080}"
-GATEWAY_HEALTH_PORT="${GATEWAY_HEALTH_PORT:-18081}"
+GATEWAY_IMAGE="${GATEWAY_IMAGE:-ghcr.io/nvidia/openshell/gateway:0.1.6}"
+GATEWAY_PORT="${GATEWAY_PORT:-18083}"
+GATEWAY_HEALTH_PORT="${GATEWAY_HEALTH_PORT:-18084}"
 GATEWAY_NAME="${GATEWAY_NAME:-zt2}"
 GATEWAY_ENDPOINT="${GATEWAY_ENDPOINT:-http://127.0.0.1:${GATEWAY_PORT}}"
 SANDBOX_IMAGE="${SANDBOX_IMAGE:-}"
@@ -79,8 +79,10 @@ ttl_secs = 3600
 [openshell.drivers.podman]
 socket_path = "${podman_socket_in_container}"
 network_name = "${PODMAN_NETWORK}"
-grpc_endpoint = "http://${GATEWAY_CONTAINER}:8080"
-image_pull_policy = "ifnotpresent"
+# Sandboxes' supervisor containers run on the podman VM's host network,
+# so the gateway must be advertised as host.containers.internal:<port>.
+grpc_endpoint = "http://host.containers.internal:${GATEWAY_PORT}"
+image_pull_policy = "if_not_present"
 health_check_interval_secs = 10
 stop_timeout_secs = 30
 provider_spiffe_workload_api_socket = "${SPIRE_AGENT_SOCKET_HOST_PATH}"
