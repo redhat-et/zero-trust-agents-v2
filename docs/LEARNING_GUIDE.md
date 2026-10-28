@@ -56,6 +56,20 @@ Two teaching notes hidden in the implementation:
   useful contrast with the asymmetric (SPIRE-signed) SVID path running
   right beside it. A production design would use asymmetric signing so
   verifiers hold only public keys.
+- **`GET /demo-subject-token` is the simulated login, not a real one.**
+  It mints any known user's subject token with no authentication — in a
+  real system this endpoint is your IdP. The blast radius is contained
+  (exchanging the token still requires a valid gateway SVID, and the
+  final scope is intersected server-side with that user's real
+  departments), but do not copy this endpoint into anything real.
+- **The JWKS trust anchor rides plain HTTP on the podman network.**
+  `http://spire-oidc:8080/keys` is standard SPIRE OIDC-discovery
+  practice and matches the upstream demo — the podman network is the
+  trust boundary — but note the tension with the zero-trust thesis: a
+  workload that could win the `spire-oidc` DNS race could serve its own
+  JWKS. Production deployments use HTTPS with a pinned CA
+  (`SPIRE_JWKS_CA_FILE` upstream) or, better, the SPIRE Workload API
+  socket for same-host verification.
 - **Grant sniffing vs. explicit token types.** The upstream Node issuer
   *tries* to parse the subject token as a user token and falls through
   to the supervisor branch on any error — so a malformed token surfaces
