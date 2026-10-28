@@ -93,6 +93,6 @@ fi
 
 printf "%s\n" "$ACCESS_TOKEN_SECRET" >"${STATE_DIR}/access-token-secret"
 printf "\nDemo services are up.\n"
-printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_PORT"
-printf "  document services: document-engineering|finance|admin|hr|public :8080\n"
+printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_HOST_PORT"
+printf "  document services: host.containers.internal ports 18101-18105 (engineering|finance|admin|hr|public)\n"
 printf "  shared secret written to %s\n" "${STATE_DIR}/access-token-secret"
