@@ -12,24 +12,30 @@ import (
 	"github.com/redhat-et/zero-trust-agents-v2/internal/tokens"
 )
 
-// fakeJWKS accepts any assertion whose sub starts with the wanted prefix.
+// fakeJWKS maps assertion strings to the identity they represent, so a
+// gateway assertion never verifies against the supervisor prefix (as
+// with real, distinct SPIFFE prefixes).
 type fakeJWKS struct {
-	subByPrefix map[string]string // prefix -> sub to report
-	failPrefix  string            // if set, requests with this prefix fail
+	assertions map[string]string // assertion -> sub
 }
 
 func (f *fakeJWKS) VerifySVID(jwt string, subjectPrefix string) (tokens.Claims, error) {
-	if f.failPrefix != "" && subjectPrefix == f.failPrefix {
-		return nil, errFakeVerify
-	}
-	sub, ok := f.subByPrefix[subjectPrefix]
-	if !ok {
+	sub, ok := f.assertions[jwt]
+	if !ok || !strings.HasPrefix(sub, subjectPrefix) {
 		return nil, errFakeVerify
 	}
 	return tokens.Claims{"sub": sub}, nil
 }
 
 var errFakeVerify = &verifyError{}
+
+func fakeGatewayJWKS() *fakeJWKS {
+	return &fakeJWKS{assertions: map[string]string{"gateway-svid": gatewaySVIDSub}}
+}
+
+func fakeGatewayFailingJWKS() *fakeJWKS {
+	return &fakeJWKS{assertions: map[string]string{}}
+}
 
 type verifyError struct{}
 
@@ -109,14 +115,14 @@ func gatewayForm(subjectTok, audience string) url.Values {
 	return url.Values{
 		"grant_type":            {tokenExchangeGrant},
 		"client_assertion_type": {jwtSpiffeAssertion},
-		"client_assertion":      {"svid"},
+		"client_assertion":      {"gateway-svid"},
 		"subject_token":         {subjectTok},
 		"audience":              {audience},
 	}
 }
 
 func TestIntermediateExchangeHappyPath(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 	status, body := postToken(t, ts, gatewayForm(subjectToken(t, "alice"), supervisorSVIDID))
 	if status != http.StatusOK {
@@ -145,7 +151,7 @@ func TestIntermediateExchangeHappyPath(t *testing.T) {
 }
 
 func TestIntermediateExchangeInvalidSubjectToken(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 	status, body := postToken(t, ts, gatewayForm("garbage.token.here", supervisorSVIDID))
 	if status != http.StatusUnauthorized {
@@ -157,7 +163,7 @@ func TestIntermediateExchangeInvalidSubjectToken(t *testing.T) {
 }
 
 func TestIntermediateExchangeExpiredSubjectToken(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 	tok, err := tokens.Sign(secret, tokens.Claims{
 		"iss": "http://token-issuer.zt-demo.svc", "sub": "alice",
@@ -175,7 +181,7 @@ func TestIntermediateExchangeExpiredSubjectToken(t *testing.T) {
 }
 
 func TestIntermediateExchangeWrongTokenType(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 	// An intermediate presented where a subject token is expected.
 	status, body := postToken(t, ts, gatewayForm(intermediateToken(t, "alice", supervisorSVIDID), supervisorSVIDID))
@@ -188,7 +194,7 @@ func TestIntermediateExchangeWrongTokenType(t *testing.T) {
 }
 
 func TestIntermediateExchangeUnknownTokenUse(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 	tok, err := tokens.Sign(secret, tokens.Claims{
 		"iss": "http://token-issuer.zt-demo.svc", "sub": "alice",
@@ -205,7 +211,7 @@ func TestIntermediateExchangeUnknownTokenUse(t *testing.T) {
 }
 
 func TestIntermediateExchangeInvalidClientAssertion(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}, failPrefix: gatewayPrefix}
+	jwks := fakeGatewayFailingJWKS()
 	ts := newExchangeServer(t, jwks)
 	status, body := postToken(t, ts, gatewayForm(subjectToken(t, "alice"), supervisorSVIDID))
 	if status != http.StatusUnauthorized || body["error"] != "invalid_client_assertion" {
@@ -214,7 +220,7 @@ func TestIntermediateExchangeInvalidClientAssertion(t *testing.T) {
 }
 
 func TestIntermediateExchangeUnsupportedAudience(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 	status, body := postToken(t, ts, gatewayForm(subjectToken(t, "alice"), "http://not-a-supervisor"))
 	if status != http.StatusBadRequest || body["error"] != "unsupported_intermediate_audience" {
@@ -223,7 +229,7 @@ func TestIntermediateExchangeUnsupportedAudience(t *testing.T) {
 }
 
 func TestTokenEndpointValidation(t *testing.T) {
-	jwks := &fakeJWKS{subByPrefix: map[string]string{gatewayPrefix: gatewaySVIDSub}}
+	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
 
 	cases := []struct {

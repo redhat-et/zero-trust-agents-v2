@@ -188,7 +188,78 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 	})
 }
 
-// handleSupervisorExchange lands in Task 5.
+var supportedAudiences = map[string]bool{
+	"engineering": true, "finance": true, "admin": true, "hr": true,
+}
+
+const finalTTL = 300
+
+// handleSupervisorExchange: the supervisor presents the sandbox's SVID
+// plus the intermediate token, and receives a final scoped token. This
+// is where v2's permission intersection is enforced: the user's
+// departments (looked up server-side by sub) must intersect the
+// requested scope, and the minted scope is exactly that intersection.
 func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request, claims tokens.Claims, supervisorSVID tokens.Claims) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not_implemented"})
+	if !claims.HasAudience(supervisorSVID.String("sub")) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "intermediate_token_audience_mismatch"})
+		return
+	}
+	audience := r.Form.Get("audience")
+	if !supportedAudiences[audience] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_audience", "audience": audience})
+		return
+	}
+
+	user, ok := s.byUser[claims.String("sub")]
+	if !ok {
+		// Unknown users have no departments: empty intersection.
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "insufficient_department_permissions"})
+		return
+	}
+	requested := strings.Fields(r.Form.Get("scope"))
+	intersection := intersect(user.Departments, requested)
+	if len(intersection) == 0 {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "insufficient_department_permissions",
+		})
+		return
+	}
+
+	tok, err := tokens.Sign(s.secret, tokens.Claims{
+		"iss":            s.cfg.TokenIssuer,
+		"sub":            user.ID,
+		"aud":            []string{audience, "account"},
+		"scope":          strings.Join(intersection, " "),
+		"azp":            supervisorSVID.String("sub"),
+		"client_id":      supervisorSVID.String("sub"),
+		"demo_token_use": tokens.UseFinal,
+		"iat":            now(),
+		"exp":            now() + finalTTL,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": tok,
+		"token_type":   "Bearer",
+		"expires_in":   finalTTL,
+		"scope":        strings.Join(intersection, " "),
+	})
+}
+
+func intersect(departments, requested []string) []string {
+	set := make(map[string]bool, len(departments))
+	for _, d := range departments {
+		set[d] = true
+	}
+	var out []string
+	seen := make(map[string]bool)
+	for _, s := range requested {
+		if set[s] && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
