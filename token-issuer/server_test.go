@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/redhat-et/zero-trust-agents-v2/internal/config"
@@ -111,17 +110,5 @@ func TestSubjectTokenMissingUserParam(t *testing.T) {
 	}
 	if body["error"] != "missing_user" {
 		t.Errorf("error: %v", body["error"])
-	}
-}
-
-func TestTokenEndpointStub(t *testing.T) {
-	ts := newTestServer(t)
-	resp, err := http.Post(ts.URL+"/token", "application/x-www-form-urlencoded", strings.NewReader("grant_type=x"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("want 501, got %d", resp.StatusCode)
 	}
 }
