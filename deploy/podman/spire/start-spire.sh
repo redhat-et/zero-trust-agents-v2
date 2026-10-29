@@ -35,8 +35,14 @@ SPIRE_AGENT_SOCKET_HOST_PATH="${SPIRE_AGENT_SOCKET_HOST_PATH:-${agent_dir}/socke
 
 mkdir -p "${server_dir}/data" "${server_dir}/private" "${agent_dir}/data" \
     "${agent_dir}/sockets" "$mount_dir"
-chmod 0777 "$SPIRE_STATE_DIR" "$server_dir" "${server_dir}/data" \
-    "${server_dir}/private" "$agent_dir" "${agent_dir}/data" "${agent_dir}/sockets"
+# The server and OIDC containers run as UID 1000, which maps to a subuid
+# under rootless podman and cannot be chowned from the remote client, so
+# their state stays world-writable (as upstream). Everything else — the
+# state root, the agent's dirs (the agent runs as container root, i.e.
+# the invoking user), and the read-only config mounts — is 0755.
+chmod 0777 "$server_dir" "${server_dir}/data" "${server_dir}/private"
+chmod 0755 "$SPIRE_STATE_DIR" "$agent_dir" "${agent_dir}/data" \
+    "${agent_dir}/sockets" "$mount_dir"
 copy_config "${SCRIPT_DIR}/server.conf" "$server_conf_mount"
 copy_config "${SCRIPT_DIR}/oidc-discovery-provider.conf" "$oidc_conf_mount"
 copy_config "${SCRIPT_DIR}/agent.conf" "$agent_conf_mount"

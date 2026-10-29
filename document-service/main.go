@@ -6,7 +6,6 @@ package main
 
 import (
 	"log/slog"
-	"net/http"
 	"os"
 )
 
@@ -31,8 +30,9 @@ func main() {
 		addr = ":8080"
 	}
 	srv := NewServer(secret, issuer, department, Documents(department))
+	srv.Addr = addr
 	logger.Info("document service listening", "addr", addr, "department", department)
-	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("serve", "err", err)
 		os.Exit(1)
 	}

@@ -4,12 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 
-echo "== sandboxes and providers =="
+echo "== sandboxes, providers, profiles =="
 for sbx in $("${OS[@]}" sandbox list 2>/dev/null | awk 'NR>1 {print $1}'); do
     "${OS[@]}" sandbox delete "$sbx" 2>&1 | tail -1 || true
 done
 for prov in $("${OS[@]}" provider list 2>/dev/null | awk 'NR>1 {print $1}'); do
     "${OS[@]}" provider delete "$prov" >/dev/null 2>&1 || true
+done
+# Profiles are immutable per ID, so a fresh setup requires them gone.
+for prof in $("${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {print $1}'); do
+    "${OS[@]}" profile delete "$prof" >/dev/null 2>&1 || true
 done
 
 echo "== containers =="

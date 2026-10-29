@@ -8,12 +8,16 @@ import (
 	"time"
 )
 
-var testClaims = Claims{
-	"iss":            "http://token-issuer.zt-demo.svc",
-	"sub":            "alice",
-	"demo_token_use": UseUserSubject,
-	"iat":            time.Now().Unix(),
-	"exp":            time.Now().Add(time.Minute).Unix(),
+// testClaims returns a fresh map per call: tests mutate the claims
+// (delete/set exp), and a shared map would leak state between tests.
+func testClaims() Claims {
+	return Claims{
+		"iss":            "http://token-issuer.zt-demo.svc",
+		"sub":            "alice",
+		"demo_token_use": UseUserSubject,
+		"iat":            time.Now().Unix(),
+		"exp":            time.Now().Add(time.Minute).Unix(),
+	}
 }
 
 func signOrFail(t *testing.T, c Claims) string {
@@ -26,7 +30,7 @@ func signOrFail(t *testing.T, c Claims) string {
 }
 
 func TestSignVerifyRoundTrip(t *testing.T) {
-	tok := signOrFail(t, testClaims)
+	tok := signOrFail(t, testClaims())
 	got, err := Verify("secret", tok)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +41,7 @@ func TestSignVerifyRoundTrip(t *testing.T) {
 }
 
 func TestVerifyTamperedPayload(t *testing.T) {
-	tok := signOrFail(t, testClaims)
+	tok := signOrFail(t, testClaims())
 	parts := strings.Split(tok, ".")
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
@@ -56,7 +60,7 @@ func TestVerifyTamperedPayload(t *testing.T) {
 }
 
 func TestVerifyExpired(t *testing.T) {
-	c := Claims(testClaims)
+	c := testClaims()
 	c["exp"] = time.Now().Add(-time.Minute).Unix()
 	tok := signOrFail(t, c)
 	if _, err := Verify("secret", tok); err == nil {
@@ -67,7 +71,7 @@ func TestVerifyExpired(t *testing.T) {
 func TestVerifyMissingExp(t *testing.T) {
 	// A demo whose thesis is short-lived tokens must not accept one that
 	// never expires.
-	c := Claims(testClaims)
+	c := testClaims()
 	delete(c, "exp")
 	tok := signOrFail(t, c)
 	if _, err := Verify("secret", tok); err == nil {
@@ -76,7 +80,7 @@ func TestVerifyMissingExp(t *testing.T) {
 }
 
 func TestVerifyWrongSecret(t *testing.T) {
-	tok := signOrFail(t, testClaims)
+	tok := signOrFail(t, testClaims())
 	if _, err := Verify("other", tok); err == nil {
 		t.Fatal("want error for wrong secret")
 	}
@@ -84,7 +88,7 @@ func TestVerifyWrongSecret(t *testing.T) {
 
 func TestVerifyAlgNone(t *testing.T) {
 	// Hand-craft a token with alg: none and no signature.
-	payload, _ := json.Marshal(map[string]any(testClaims))
+	payload, _ := json.Marshal(testClaims())
 	tok := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0." +
 		base64.RawURLEncoding.EncodeToString(payload) + "."
 	if _, err := Verify("secret", tok); err == nil {
@@ -95,7 +99,7 @@ func TestVerifyAlgNone(t *testing.T) {
 func TestVerifyAlgRS256(t *testing.T) {
 	// Hand-craft a token whose header claims RS256 but whose signature
 	// is a valid HMAC (the key-confusion forgery).
-	payload, _ := json.Marshal(map[string]any(testClaims))
+	payload, _ := json.Marshal(testClaims())
 	signingInput := "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9." +
 		base64.RawURLEncoding.EncodeToString(payload)
 	// Build properly: header RS256, HMAC signature over the input.
@@ -107,7 +111,7 @@ func TestVerifyAlgRS256(t *testing.T) {
 }
 
 func TestParseWithoutVerification(t *testing.T) {
-	tok := signOrFail(t, testClaims)
+	tok := signOrFail(t, testClaims())
 	got, err := Parse(tok)
 	if err != nil {
 		t.Fatal(err)

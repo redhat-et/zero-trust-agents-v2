@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/redhat-et/zero-trust-agents-v2/internal/tokens"
 )
@@ -20,7 +21,7 @@ type docServer struct {
 // NewServer builds the document service for one department. The token's
 // aud must name the department (audience = target service) and its scope
 // must cover each document's required department (scope = capability).
-func NewServer(secret, issuer, department string, docs []*Document) *docServer {
+func NewServer(secret, issuer, department string, docs []*Document) *http.Server {
 	s := &docServer{
 		secret:     secret,
 		issuer:     issuer,
@@ -35,10 +36,14 @@ func NewServer(secret, issuer, department string, docs []*Document) *docServer {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /documents", s.handleList)
 	s.mux.HandleFunc("GET /documents/{id}", s.handleGet)
-	return s
+	return &http.Server{
+		Addr:              ":8080",
+		Handler:           s.mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+	}
 }
-
-func (s *docServer) Handler() http.Handler { return s.mux }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")

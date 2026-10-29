@@ -41,7 +41,7 @@ Demo environment ready.
   token issuer:   http://127.0.0.1:8080 (alias token-issuer.zt-demo.svc)
   doc services:   192.168.127.254.nip.io ports 18101-18105 (eng|fin|adm|hr|public)
   gateway:        http://127.0.0.1:18083 (name zt2)
-  shared secret:  $STATE_DIR/access-token-secret (also $SPIRE_STATE_DIR/access-token-secret)
+  shared secret:  $STATE_DIR/access-token-secret
 
 Run scenarios: scripts/scenario1.sh .. scenario6.sh
 EOF

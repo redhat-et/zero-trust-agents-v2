@@ -91,7 +91,9 @@ if ! podman machine ssh "grep -q token-issuer.zt-demo.svc /etc/hosts" 2>/dev/nul
     podman machine ssh "sudo sh -c 'echo 192.168.127.254 token-issuer.zt-demo.svc >> /etc/hosts'"
 fi
 
-printf "%s\n" "$ACCESS_TOKEN_SECRET" >"${STATE_DIR}/access-token-secret"
+# 0600 on every run: the redirect alone won't tighten an existing file.
+(umask 077 && printf "%s\n" "$ACCESS_TOKEN_SECRET" >"${STATE_DIR}/access-token-secret")
+chmod 600 "${STATE_DIR}/access-token-secret"
 printf "\nDemo services are up.\n"
 printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_HOST_PORT"
 printf "  document services: host.containers.internal ports 18101-18105 (engineering|finance|admin|hr|public)\n"

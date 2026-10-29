@@ -174,7 +174,11 @@ func (v *jwksVerifier) VerifySVID(jwt string, subjectPrefix string) (tokens.Clai
 		return nil, err
 	}
 	now := time.Now().Unix()
-	if exp := claims.Int64("exp"); exp > 0 && exp <= now {
+	exp := claims.Int64("exp")
+	if exp == 0 {
+		return nil, fmt.Errorf("svid has no exp claim")
+	}
+	if exp <= now {
 		return nil, fmt.Errorf("svid expired")
 	}
 	if nbf := claims.Int64("nbf"); nbf > 0 && nbf > now+30 {

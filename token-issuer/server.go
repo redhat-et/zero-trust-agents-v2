@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/redhat-et/zero-trust-agents-v2/internal/config"
 	"github.com/redhat-et/zero-trust-agents-v2/internal/tokens"
@@ -39,7 +40,13 @@ func NewServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /demo-subject-token", s.handleSubjectToken)
 	s.mux.HandleFunc("POST /token", s.handleToken)
-	return &http.Server{Addr: cfg.ListenAddr, Handler: s.mux}
+	return &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           s.mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+	}
 }
 
 // Handler exposes the routing for tests.

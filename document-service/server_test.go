@@ -36,7 +36,7 @@ func finalToken(t *testing.T, user, audience string, scopes ...string) string {
 func newDocServer(t *testing.T, department string) *httptest.Server {
 	t.Helper()
 	srv := NewServer(docSecret, docIssuer, department, Documents(department))
-	ts := httptest.NewServer(http.Handler(srv.Handler()))
+	ts := httptest.NewServer(srv.Handler)
 	t.Cleanup(ts.Close)
 	return ts
 }

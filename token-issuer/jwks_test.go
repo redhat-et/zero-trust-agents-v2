@@ -168,6 +168,16 @@ func TestVerifySVIDRejectsExpired(t *testing.T) {
 	}
 }
 
+func TestVerifySVIDRejectsMissingExp(t *testing.T) {
+	ts, ecKey, _ := jwksServer(t)
+	v := newVerifier(t, ts.URL)
+	c := validSVIDClaims(gatewayPrefix + "demo")
+	delete(c, "exp")
+	if _, err := v.VerifySVID(signES256SVID(t, ecKey, "ec-1", c), gatewayPrefix); err == nil {
+		t.Fatal("want error for SVID without exp")
+	}
+}
+
 func TestVerifySVIDRejectsWrongAudience(t *testing.T) {
 	ts, ecKey, _ := jwksServer(t)
 	v := newVerifier(t, ts.URL)
