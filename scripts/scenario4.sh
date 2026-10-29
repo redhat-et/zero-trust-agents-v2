@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 scenario_header "Scenario 4: Carol (hr) x hr capability -> hr doc"
 
-SUBJECT_TOKEN="$(curl -fsS "$ISSUER_LOCAL/demo-subject-token?user=carol" |
+SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=carol" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 "${OS[@]}" provider create --name carol-hr-prov-s4-$$ --type zt2-carol-hr-v2 \
     --credential "subject_token=${SUBJECT_TOKEN}" >/dev/null

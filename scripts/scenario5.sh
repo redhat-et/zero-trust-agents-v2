@@ -32,7 +32,7 @@ echo "  rogue SVID fetched (${#ROGUE_SVID} chars, validly signed by SPIRE)"
 
 # Attempt the intermediate exchange directly at the issuer, with a valid
 # subject token so the only thing that can deny is the rogue SVID.
-SUBJECT_TOKEN="$(curl -fsS "$ISSUER_LOCAL/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$ISSUER_LOCAL/token" \
     -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \

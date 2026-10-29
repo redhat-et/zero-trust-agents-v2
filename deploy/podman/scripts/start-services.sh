@@ -19,19 +19,40 @@ STATE_DIR="${STATE_DIR:-$(mktemp -d)}"
 
 # The issuer's URL as seen from the gateway/sandboxes on the network.
 # Plain HTTP token endpoints pass OpenShell profile lint only for
-# loopback or *.svc hosts, hence the .svc alias. The issuer is published
-# on host port 8080 and the VM maps token-issuer.zt-demo.svc to
-# host.containers.internal, so the supervisor (host netns) and the
-# gateway (zt2 network) both resolve the same name and port.
+# loopback or *.svc hosts, hence the .svc alias. The alias itself is
+# unresolvable where it matters — the supervisor (network=host) and,
+# via aardvark's upstream forwarding, the gateway — so a hosts entry
+# maps it to the published-port address on each OS: the podman VM's
+# gateway on macOS, the host's LAN address on Linux.
 TOKEN_ISSUER_BASE_URL="${TOKEN_ISSUER_BASE_URL:-http://token-issuer.zt-demo.svc:8080}"
 TOKEN_ISSUER_HOST_PORT="${TOKEN_ISSUER_HOST_PORT:-8080}"
 
-# Document services are published on distinct host ports and reached via
-# host.containers.internal (the supervisor's netns cannot resolve podman
-# network aliases, and the sandbox's policy DNS resolves declared
-# endpoint hosts through the supervisor's system resolver).
-DOC_PORTS=("18101" "18102" "18103" "18104" "18105")
+# The unauthenticated demo-subject-token endpoint is served on a second
+# listener (DEMO_LISTEN_ADDR, :8090 in the image) published loopback
+# only: the main port is published on the LAN for the gateway's
+# authenticated /token exchange, and must not carry the token minter.
+TOKEN_ISSUER_DEMO_HOST_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}"
+export TOKEN_ISSUER_DEMO_HOST_PORT
+write_env_line TOKEN_ISSUER_DEMO_HOST_PORT "$TOKEN_ISSUER_DEMO_HOST_PORT"
+
+# Document services are published on distinct host ports: the
+# supervisor's netns cannot resolve podman network aliases, and the
+# sandbox's policy DNS resolves declared endpoint hosts through the
+# supervisor's system resolver.
 DOC_DEPTS=("engineering" "finance" "admin" "hr" "public")
+
+# publish_flags HOST_PORT — podman -p flags for a container's 8080.
+# Loopback always (host-side health checks in the scenario scripts);
+# on Linux also the host's LAN address, where the supervisor and the
+# sandbox policy DNS reach the service. Binding all interfaces instead
+# would expose the unauthenticated demo issuer to the LAN.
+publish_flags() {
+    local port="$1"
+    printf -- "-p 127.0.0.1:%s:8080" "$port"
+    if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+        printf " -p %s:%s:8080" "$(doc_endpoint_ip)" "$port"
+    fi
+}
 
 ACCESS_TOKEN_SECRET="${ACCESS_TOKEN_SECRET:-$(openssl rand -hex 32)}"
 export ACCESS_TOKEN_SECRET
@@ -40,15 +61,17 @@ ensure_network
 mkdir -p "$STATE_DIR"
 
 cleanup_container "$TOKEN_ISSUER_CONTAINER"
-for dept in engineering finance admin hr public; do
+for dept in "${DOC_DEPTS[@]}"; do
     cleanup_container "zt2-document-${dept}"
 done
 printf "Starting token issuer: %s\n" "$TOKEN_ISSUER_CONTAINER" >&2
+# shellcheck disable=SC2046
 run podman run -d \
     --name "$TOKEN_ISSUER_CONTAINER" \
     --network "$NETWORK" \
     --network-alias token-issuer.zt-demo.svc \
-    -p "127.0.0.1:${TOKEN_ISSUER_HOST_PORT}:8080" \
+    $(publish_flags "$TOKEN_ISSUER_HOST_PORT") \
+    -p "127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT}:8090" \
     -v "${REPO_ROOT}/config/users.yaml:/config/users.yaml:ro,z" \
     -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
     -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
@@ -61,20 +84,24 @@ run podman run -d \
     -e "USERS_FILE=/config/users.yaml" \
     "${IMAGE_PREFIX}/token-issuer"
 
-if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_HOST_PORT}/healthz" "token issuer"; then
+if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_HOST_PORT}/healthz" "token issuer (main)"; then
+    podman logs "$TOKEN_ISSUER_CONTAINER" >&2 || true
+    exit 1
+fi
+if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT}/healthz" "token issuer (demo)"; then
     podman logs "$TOKEN_ISSUER_CONTAINER" >&2 || true
     exit 1
 fi
 
-for i in "${!DOC_DEPTS[@]}"; do
-    dept="${DOC_DEPTS[$i]}"
-    port="${DOC_PORTS[$i]}"
+for dept in "${DOC_DEPTS[@]}"; do
+    port="$(doc_endpoint_port "$dept")"
     printf "Starting document service: %s (host port %s)\n" "zt2-document-${dept}" "$port" >&2
+    # shellcheck disable=SC2046
     run podman run -d \
         --name "zt2-document-${dept}" \
         --network "$NETWORK" \
         --network-alias "document-${dept}" \
-        -p "127.0.0.1:${port}:8080" \
+        $(publish_flags "$port") \
         -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
         -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
         -e "DEPARTMENT=${dept}" \
@@ -82,13 +109,25 @@ for i in "${!DOC_DEPTS[@]}"; do
         "${IMAGE_PREFIX}/document-service"
 done
 
-# Map the issuer's .svc name for the supervisor's netns (host network in
-# the podman VM): the supervisor cannot resolve podman network aliases,
-# and the token endpoint's host must pass profile lint (.svc shape).
-# Upstream's README sanctions a hosts entry for exactly this case.
-if ! podman machine ssh "grep -q token-issuer.zt-demo.svc /etc/hosts" 2>/dev/null; then
-    printf "Adding token-issuer.zt-demo.svc to the podman VM's /etc/hosts\n" >&2
-    podman machine ssh "sudo sh -c 'echo 192.168.127.254 token-issuer.zt-demo.svc >> /etc/hosts'"
+# Map the issuer's .svc name (see TOKEN_ISSUER_BASE_URL above).
+# Match the full line, not just the hostname: a stale entry pointing
+# at an old host IP must be rewritten, not skipped. On Linux the entry
+# is load-bearing for every token exchange, so a failed edit is fatal.
+if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+    issuer_hosts_line="$(doc_endpoint_ip) token-issuer.zt-demo.svc"
+    if ! grep -qF "$issuer_hosts_line" /etc/hosts; then
+        printf "Setting %s in /etc/hosts (sudo)\n" "$issuer_hosts_line" >&2
+        sudo sed -i "/token-issuer.zt-demo.svc/d" /etc/hosts
+        if ! sudo sh -c "echo '$issuer_hosts_line' >> /etc/hosts"; then
+            printf "could not edit /etc/hosts; token exchange cannot work without the issuer entry\n" >&2
+            exit 1
+        fi
+    fi
+else
+    if ! podman machine ssh "grep -q token-issuer.zt-demo.svc /etc/hosts" 2>/dev/null; then
+        printf "Adding token-issuer.zt-demo.svc to the podman VM's /etc/hosts\n" >&2
+        podman machine ssh "sudo sh -c 'echo 192.168.127.254 token-issuer.zt-demo.svc >> /etc/hosts'"
+    fi
 fi
 
 # 0600 on every run: the redirect alone won't tighten an existing file.
@@ -96,5 +135,6 @@ fi
 chmod 600 "${STATE_DIR}/access-token-secret"
 printf "\nDemo services are up.\n"
 printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_HOST_PORT"
-printf "  document services: host.containers.internal ports 18101-18105 (engineering|finance|admin|hr|public)\n"
+printf "  subject-token mint (loopback only): http://127.0.0.1:%s\n" "$TOKEN_ISSUER_DEMO_HOST_PORT"
+printf "  document services: %s ports 18101-18105 (engineering|finance|admin|hr|public)\n" "$(doc_endpoint_ip)"
 printf "  shared secret written to %s\n" "${STATE_DIR}/access-token-secret"

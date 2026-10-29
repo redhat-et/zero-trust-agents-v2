@@ -23,8 +23,10 @@ by `GET /demo-subject-token?user=alice`, carrying her `departments`
 claim) and exchanges it via RFC 8693 when the sandbox needs access. The
 sandbox never sees Alice's token — see step 3.
 
-**Where to look:** `deploy/podman/profiles/*.yaml` (the
-`subject_token` credential and `token_grant` block).
+**Where to look:** `deploy/podman/profiles/*.yaml.in` — the
+per-host-OS templates, rendered at setup time into
+`.zt2-state/profiles/` (the `subject_token` credential and
+`token_grant` block).
 
 ## Capabilities are configured, never requested
 

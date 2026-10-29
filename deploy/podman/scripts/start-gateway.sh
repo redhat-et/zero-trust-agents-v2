@@ -3,9 +3,9 @@
 # and wait until healthy. Adapted from OpenShell
 # examples/spiffe-token-exchange-demo/podman/demo.sh (NVIDIA, Apache-2.0).
 #
-# The gateway must run as a container on macOS: the SPIRE agent's
-# Workload API socket lives inside the podman machine VM, so a
-# host-native gateway cannot reach it.
+# The gateway runs as a container on every host OS: on macOS it must
+# (the SPIRE agent's Workload API socket lives inside the podman machine
+# VM), and on Linux it keeps one code path toward the OpenShift stage.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,6 +55,17 @@ if [[ -n "$SANDBOX_IMAGE" ]]; then
     sandbox_image_line="default_image = \"${SANDBOX_IMAGE}\""
 fi
 
+# How sandbox supervisors reach the gateway's gRPC port. On macOS the
+# supervisors live in the podman VM's host netns, where only the
+# published host port (via host.containers.internal) is reachable. On
+# Linux the supervisors share the real host's netns, so the loopback
+# publish is directly reachable.
+if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+    gateway_grpc_endpoint="http://127.0.0.1:${GATEWAY_PORT}"
+else
+    gateway_grpc_endpoint="http://host.containers.internal:${GATEWAY_PORT}"
+fi
+
 cat >"$config_path" <<EOF
 [openshell]
 version = 2
@@ -62,7 +73,7 @@ version = 2
 [openshell.gateway]
 bind_address = "0.0.0.0:8080"
 health_bind_address = "0.0.0.0:8081"
-log_level = "info"
+log_level = "${GATEWAY_LOG_LEVEL:-info}"
 compute_driver = "podman"
 disable_tls = true
 
@@ -79,9 +90,7 @@ ttl_secs = 3600
 [openshell.drivers.podman]
 socket_path = "${podman_socket_in_container}"
 network_name = "${PODMAN_NETWORK}"
-# Sandboxes' supervisor containers run on the podman VM's host network,
-# so the gateway must be advertised as host.containers.internal:<port>.
-grpc_endpoint = "http://host.containers.internal:${GATEWAY_PORT}"
+grpc_endpoint = "${gateway_grpc_endpoint}"
 image_pull_policy = "if_not_present"
 health_check_interval_secs = 10
 stop_timeout_secs = 30

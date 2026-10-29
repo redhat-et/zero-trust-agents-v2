@@ -22,24 +22,35 @@ type server struct {
 	jwks   JWKSVerifier
 	mux    *http.ServeMux
 	byUser map[string]config.User
+	// Serves only the unauthenticated demo-subject-token endpoint, on a
+	// port the deployment publishes loopback-only; mux (which carries
+	// the authenticated /token) is what gets published beyond loopback.
+	demoMux *http.ServeMux
 }
 
-// NewServer builds the token issuer. jwks may be nil while only the
-// subject-token endpoint is used; /token returns 501 until Task 4 wires it.
-func NewServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
+func newServer(cfg *config.Config, jwks JWKSVerifier) *server {
 	s := &server{
-		cfg:    cfg,
-		secret: os.Getenv("ACCESS_TOKEN_SECRET"),
-		jwks:   jwks,
-		mux:    http.NewServeMux(),
-		byUser: make(map[string]config.User),
+		cfg:     cfg,
+		secret:  os.Getenv("ACCESS_TOKEN_SECRET"),
+		jwks:    jwks,
+		mux:     http.NewServeMux(),
+		byUser:  make(map[string]config.User),
+		demoMux: http.NewServeMux(),
 	}
 	for _, u := range cfg.Users {
 		s.byUser[u.ID] = u
 	}
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
-	s.mux.HandleFunc("GET /demo-subject-token", s.handleSubjectToken)
 	s.mux.HandleFunc("POST /token", s.handleToken)
+	s.demoMux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.demoMux.HandleFunc("GET /demo-subject-token", s.handleSubjectToken)
+	return s
+}
+
+// NewServer builds the token issuer's main listener: the authenticated
+// /token endpoint, safe to publish beyond loopback.
+func NewServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
+	s := newServer(cfg, jwks)
 	return &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           s.mux,
@@ -49,8 +60,29 @@ func NewServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
 	}
 }
 
+// NewDemoServer builds the loopback-only listener for the
+// unauthenticated demo-subject-token endpoint; the deployment publishes
+// its port on loopback only.
+func NewDemoServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
+	s := newServer(cfg, jwks)
+	addr := os.Getenv("DEMO_LISTEN_ADDR")
+	if addr == "" {
+		addr = ":8090"
+	}
+	return &http.Server{
+		Addr:              addr,
+		Handler:           s.demoMux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+	}
+}
+
 // Handler exposes the routing for tests.
 func (s *server) Handler() http.Handler { return s.mux }
+
+// DemoHandler exposes the loopback-only demo routing for tests.
+func (s *server) DemoHandler() http.Handler { return s.demoMux }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")

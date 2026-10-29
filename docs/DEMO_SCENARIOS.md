@@ -31,7 +31,20 @@ the token issuer.
 
 ## Running
 
-```console
+Setup the demo platform. The script creates:
+
+- a SPIRE service that is responsible for creating workload identities (SPIFFE IDs) for agents
+  ([`deploy/podman/spire/start-spire.sh`](../deploy/podman/spire/start-spire.sh))
+- an OpenShell gateway in a Podman container
+  ([`deploy/podman/scripts/start-gateway.sh`](../deploy/podman/scripts/start-gateway.sh))
+- a token issuer reimplemented from the upstream example
+  ([`deploy/podman/scripts/start-services.sh`](../deploy/podman/scripts/start-services.sh))
+- document services for different departments
+  ([`deploy/podman/scripts/start-services.sh`](../deploy/podman/scripts/start-services.sh))
+- provider profiles
+  ([`deploy/podman/profiles/`](../deploy/podman/profiles/))
+
+```bash
 scripts/setup.sh          # SPIRE + gateway + services + profiles
 scripts/scenario1.sh      # ... through scenario6.sh
 scripts/teardown.sh
@@ -73,8 +86,8 @@ Mint a subject token as any user and inspect its claims:
 ```console
 $ curl -s "http://127.0.0.1:8080/demo-subject-token?user=alice" |
     python3 -c 'import json,sys,base64;
-    t=json.load(sys.stdin)["access_token"].split(".")[1];
-    print(json.dumps(json.loads(base64.urlsafe_b64decode(t+"="*(-len(t)%4))),indent=2))'
+t=json.load(sys.stdin)["access_token"].split(".")[1];
+print(json.dumps(json.loads(base64.urlsafe_b64decode(t+"="*(-len(t)%4))),indent=2))'
 ```
 
 Drive an exchange by hand (scenario 6 does this end-to-end): fetch the

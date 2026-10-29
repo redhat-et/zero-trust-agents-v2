@@ -6,6 +6,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export STATE_DIR="${STATE_DIR:-$ROOT/.zt2-state}"
+# shellcheck source=../deploy/podman/spire/common.sh
+source "$ROOT/deploy/podman/spire/common.sh"
 mkdir -p "$STATE_DIR"
 export SPIRE_ENV_FILE="${SPIRE_ENV_FILE:-$STATE_DIR/spire.env}"
 
@@ -14,7 +16,7 @@ PODMAN_NETWORK=zt2 CLEANUP_EXISTING=1 bash "$ROOT/deploy/podman/spire/start-spir
 
 # shellcheck source=/dev/null
 source "$SPIRE_ENV_FILE"
-export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH
+export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP TOKEN_ISSUER_DEMO_HOST_PORT
 
 echo "== 2/5 OpenShell gateway =="
 bash "$ROOT/deploy/podman/scripts/start-gateway.sh"
@@ -23,6 +25,26 @@ echo "== 3/5 demo services (token issuer, document services) =="
 bash "$ROOT/deploy/podman/scripts/start-services.sh"
 
 echo "== 4/5 provider profiles =="
+# Profiles are templates: endpoint host/port (and allowed_ips) depend on
+# the host OS, so render them into the state dir before importing.
+# Each profile declares the department endpoint it targets (alice-hr
+# and nodelegation exercise a denial against the engineering service).
+profile_dept() {
+    case "$1" in
+        carol-hr) echo hr ;;
+        *) echo engineering ;;
+    esac
+}
+profile_out_dir="${STATE_DIR}/profiles"
+mkdir -p "$profile_out_dir"
+for profile in alice-engineering alice-hr carol-hr nodelegation; do
+    dept="$(profile_dept "$profile")"
+    sed -e "s/@DOC_HOST@/$(doc_endpoint_host "$dept")/" \
+        -e "s/@DOC_PORT@/$(doc_endpoint_port "$dept")/" \
+        -e "$(doc_allowed_ips_subst)" \
+        "$ROOT/deploy/podman/profiles/$profile.yaml.in" \
+        >"$profile_out_dir/$profile.yaml"
+done
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 
 # Profiles are immutable per ID, so a stale zt2-* profile from an earlier
@@ -50,22 +72,24 @@ if "${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {found=1} END
 fi
 
 for profile in alice-engineering alice-hr carol-hr nodelegation; do
-    "${OS[@]}" profile lint -f "$ROOT/deploy/podman/profiles/$profile.yaml" | tail -1
-    "${OS[@]}" profile import -f "$ROOT/deploy/podman/profiles/$profile.yaml" | tail -1
+    "${OS[@]}" profile lint -f "$profile_out_dir/$profile.yaml" | tail -1
+    "${OS[@]}" profile import -f "$profile_out_dir/$profile.yaml" | tail -1
 done
 
 echo "== 5/5 smoke test =="
-SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:8080/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}/demo-subject-token?user=alice" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 "${OS[@]}" provider create --name alice-eng --type zt2-alice-engineering-v2 \
     --credential "subject_token=${SUBJECT_TOKEN}" 2>&1 | tail -1
 
+doc_summary="$(doc_endpoint_ip) ports 18101-18105 (eng|fin|adm|hr|public)"
+
 cat <<EOF
 
 Demo environment ready.
   token issuer:   http://127.0.0.1:8080 (alias token-issuer.zt-demo.svc)
-  doc services:   192.168.127.254.nip.io ports 18101-18105 (eng|fin|adm|hr|public)
+  doc services:   $doc_summary
   gateway:        http://127.0.0.1:18083 (name zt2)
   shared secret:  $STATE_DIR/access-token-secret
 
