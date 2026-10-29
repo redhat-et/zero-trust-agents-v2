@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One-command demo setup: SPIRE, OpenShell gateway, demo services, and
-# provider profiles. Idempotent-ish: restarts containers, reuses state.
+# provider profiles. Restarts containers, reuses state, and clears stale
+# demo profiles so re-running against a dirty environment works.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,6 +24,31 @@ bash "$ROOT/deploy/podman/scripts/start-services.sh"
 
 echo "== 4/5 provider profiles =="
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
+
+# Profiles are immutable per ID, so a stale zt2-* profile from an earlier
+# run breaks import. Clear the dependency chain (sandboxes -> providers ->
+# profiles) first; sandbox deletion is async, so wait for it before
+# deleting the providers attached to them.
+if "${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {found=1} END {exit !found}'; then
+    echo "removing stale demo state (sandboxes, providers, profiles)"
+    for sbx in $("${OS[@]}" sandbox list 2>/dev/null | awk 'NR>1 {print $1}'); do
+        "${OS[@]}" sandbox delete "$sbx" >/dev/null 2>&1 || true
+    done
+    for _ in $(seq 1 20); do
+        [[ -z "$("${OS[@]}" sandbox list 2>/dev/null | awk 'NR>1 {print $1}')" ]] && break
+        sleep 3
+    done
+    for prov in $("${OS[@]}" provider list 2>/dev/null | awk 'NR>1 {print $1}'); do
+        "${OS[@]}" provider delete "$prov" >/dev/null 2>&1 || true
+    done
+    for prof in $("${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {print $1}'); do
+        "${OS[@]}" profile delete "$prof" >/dev/null 2>&1 || true
+    done
+    if "${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {found=1} END {exit !found}'; then
+        echo "warning: some zt2-* profiles could not be deleted; import may fail" >&2
+    fi
+fi
+
 for profile in alice-engineering alice-hr carol-hr nodelegation; do
     "${OS[@]}" profile lint -f "$ROOT/deploy/podman/profiles/$profile.yaml" | tail -1
     "${OS[@]}" profile import -f "$ROOT/deploy/podman/profiles/$profile.yaml" | tail -1
