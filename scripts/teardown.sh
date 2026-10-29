@@ -12,8 +12,12 @@ for prov in $("${OS[@]}" provider list 2>/dev/null | awk 'NR>1 {print $1}'); do
     "${OS[@]}" provider delete "$prov" >/dev/null 2>&1 || true
 done
 # Profiles are immutable per ID, so a fresh setup requires them gone.
+# Best-effort like the rest of teardown, but a failed deletion is
+# reported: a leftover profile will break the next setup.
 for prof in $("${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {print $1}'); do
-    "${OS[@]}" profile delete "$prof" >/dev/null 2>&1 || true
+    if ! "${OS[@]}" profile delete "$prof" >/dev/null 2>&1; then
+        printf "warning: failed to delete profile %s (the next setup will fail if it persists)\n" "$prof" >&2
+    fi
 done
 
 echo "== containers =="
