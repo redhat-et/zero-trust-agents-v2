@@ -30,6 +30,14 @@ func newTestServer(t *testing.T) *httptest.Server {
 	return ts
 }
 
+func newDemoTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := NewDemoServer(newTestConfig(t), nil)
+	ts := httptest.NewServer(srv.Handler)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
 func TestHealthz(t *testing.T) {
 	ts := newTestServer(t)
 	resp, err := http.Get(ts.URL + "/healthz")
@@ -43,7 +51,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestSubjectTokenUnknownUser(t *testing.T) {
-	ts := newTestServer(t)
+	ts := newDemoTestServer(t)
 	resp, err := http.Get(ts.URL + "/demo-subject-token?user=mallory")
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +63,7 @@ func TestSubjectTokenUnknownUser(t *testing.T) {
 }
 
 func TestSubjectTokenForAlice(t *testing.T) {
-	ts := newTestServer(t)
+	ts := newDemoTestServer(t)
 	resp, err := http.Get(ts.URL + "/demo-subject-token?user=alice")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +103,7 @@ func TestSubjectTokenForAlice(t *testing.T) {
 }
 
 func TestSubjectTokenMissingUserParam(t *testing.T) {
-	ts := newTestServer(t)
+	ts := newDemoTestServer(t)
 	resp, err := http.Get(ts.URL + "/demo-subject-token")
 	if err != nil {
 		t.Fatal(err)
@@ -110,5 +118,27 @@ func TestSubjectTokenMissingUserParam(t *testing.T) {
 	}
 	if body["error"] != "missing_user" {
 		t.Errorf("error: %v", body["error"])
+	}
+}
+
+// The demo-subject-token endpoint mints bearer tokens with no
+// authentication, so it must live only on the demo (loopback-published)
+// listener — never on the main mux, which the deployment publishes
+// beyond loopback for the gateway's authenticated /token calls.
+func TestSubjectTokenOnlyOnDemoListener(t *testing.T) {
+	mainHandler := NewServer(newTestConfig(t), nil).Handler
+	req := httptest.NewRequest(http.MethodGet, "/demo-subject-token?user=alice", nil)
+	rec := httptest.NewRecorder()
+	mainHandler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404 on the main listener, got %d", rec.Code)
+	}
+
+	demoHandler := NewDemoServer(newTestConfig(t), nil).Handler
+	req = httptest.NewRequest(http.MethodGet, "/demo-subject-token?user=alice", nil)
+	rec = httptest.NewRecorder()
+	demoHandler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 on the demo listener, got %d", rec.Code)
 	}
 }

@@ -20,6 +20,9 @@ source "$ROOT/deploy/podman/spire/common.sh"
 ENGINEERING_URL="http://$(doc_endpoint_host engineering):$(doc_endpoint_port engineering)"
 HR_URL="http://$(doc_endpoint_host hr):$(doc_endpoint_port hr)"
 ISSUER_LOCAL="http://127.0.0.1:8080"
+# The unauthenticated subject-token minter is served on the issuer's
+# loopback-only listener (see start-services.sh).
+DEMO_SUBJECT_URL="http://127.0.0.1:8090"
 
 sandbox_id() {
     # Capture before parsing: awk's early exit closes the pipe and the

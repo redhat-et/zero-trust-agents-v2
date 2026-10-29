@@ -77,7 +77,7 @@ for profile in alice-engineering alice-hr carol-hr nodelegation; do
 done
 
 echo "== 5/5 smoke test =="
-SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:8080/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:8090/demo-subject-token?user=alice" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 "${OS[@]}" provider create --name alice-eng --type zt2-alice-engineering-v2 \

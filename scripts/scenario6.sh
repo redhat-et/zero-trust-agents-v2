@@ -14,7 +14,7 @@ scenario_header "Scenario 6: engineering-scoped token replayed against the finan
 # otherwise create and register one.
 ID="$(sandbox_id alice-s1 2>/dev/null || true)"
 if [[ -z "$ID" ]]; then
-    SUBJECT_TOKEN="$(curl -fsS "$ISSUER_LOCAL/demo-subject-token?user=alice" |
+    SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
         python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
     "${OS[@]}" provider create --name "alice-eng-s6-$$" --type zt2-alice-engineering-v2 \
         --credential "subject_token=${SUBJECT_TOKEN}" >/dev/null
@@ -30,7 +30,7 @@ if [[ -z "$GW_SVID" || -z "$SUP_SVID" ]]; then
     fail "could not fetch gateway/supervisor SVIDs"
 fi
 
-SUBJECT_TOKEN="$(curl -fsS "$ISSUER_LOCAL/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 
 # Intermediate exchange as the gateway.

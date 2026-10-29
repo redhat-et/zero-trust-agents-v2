@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 scenario_header "Scenario 1: Alice (engineering+finance) x engineering capability -> engineering doc"
 
-SUBJECT_TOKEN="$(curl -fsS "$ISSUER_LOCAL/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 "${OS[@]}" provider create --name alice-eng-s1-$$ --type zt2-alice-engineering-v2 \
     --credential "subject_token=${SUBJECT_TOKEN}" >/dev/null

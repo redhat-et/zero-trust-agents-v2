@@ -24,7 +24,15 @@ func main() {
 	}
 	jwks := NewJWKSVerifier(cfg.JWKSURI, cfg.SPIREIssuer, cfg.SVIDAudience)
 	srv := NewServer(cfg, jwks)
-	logger.Info("token issuer listening", "addr", cfg.ListenAddr)
+	demoSrv := NewDemoServer(cfg, jwks)
+	go func() {
+		logger.Info("demo subject-token listener", "addr", demoSrv.Addr)
+		if err := demoSrv.ListenAndServe(); err != nil {
+			logger.Error("serve demo", "err", err)
+			os.Exit(1)
+		}
+	}()
+	logger.Info("token issuer listening", "addr", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("serve", "err", err)
 		os.Exit(1)

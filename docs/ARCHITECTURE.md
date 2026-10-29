@@ -121,8 +121,11 @@ and the macOS workarounds collapse (`ZT2_HOST_OS` selects the layout):
   publishes bind all interfaces so the LAN address reaches them.
 - The `.svc` lint rule is platform-independent, so the issuer keeps the
   `token-issuer.zt-demo.svc` alias plus a host `/etc/hosts` entry
-  mapping it to the host's LAN IP (added with sudo by `setup.sh`), and
-  the issuer publishes on all interfaces. The hosts entry matters for
+  mapping it to the host's LAN IP (added with sudo by `setup.sh`). The
+  issuer's authenticated `/token` port publishes on loopback and the
+  LAN address, but its unauthenticated demo-subject-token minter runs
+  on a second listener (`:8090`) published loopback only, so the LAN
+  publication cannot be used to mint subject tokens remotely. The hosts entry matters for
   the gateway too: aardvark forwards unknown names to the host's
   resolver, so an entry pointing at 127.0.0.1 would make containers
   resolve the issuer to their own loopback.

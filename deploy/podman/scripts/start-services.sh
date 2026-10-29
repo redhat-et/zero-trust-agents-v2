@@ -27,6 +27,12 @@ STATE_DIR="${STATE_DIR:-$(mktemp -d)}"
 TOKEN_ISSUER_BASE_URL="${TOKEN_ISSUER_BASE_URL:-http://token-issuer.zt-demo.svc:8080}"
 TOKEN_ISSUER_HOST_PORT="${TOKEN_ISSUER_HOST_PORT:-8080}"
 
+# The unauthenticated demo-subject-token endpoint is served on a second
+# listener (DEMO_LISTEN_ADDR, :8090 in the image) published loopback
+# only: the main port is published on the LAN for the gateway's
+# authenticated /token exchange, and must not carry the token minter.
+TOKEN_ISSUER_DEMO_HOST_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}"
+
 # Document services are published on distinct host ports: the
 # supervisor's netns cannot resolve podman network aliases, and the
 # sandbox's policy DNS resolves declared endpoint hosts through the
@@ -63,6 +69,7 @@ run podman run -d \
     --network "$NETWORK" \
     --network-alias token-issuer.zt-demo.svc \
     $(publish_flags "$TOKEN_ISSUER_HOST_PORT") \
+    -p "127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT}:8090" \
     -v "${REPO_ROOT}/config/users.yaml:/config/users.yaml:ro,z" \
     -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
     -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
@@ -75,7 +82,11 @@ run podman run -d \
     -e "USERS_FILE=/config/users.yaml" \
     "${IMAGE_PREFIX}/token-issuer"
 
-if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_HOST_PORT}/healthz" "token issuer"; then
+if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_HOST_PORT}/healthz" "token issuer (main)"; then
+    podman logs "$TOKEN_ISSUER_CONTAINER" >&2 || true
+    exit 1
+fi
+if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT}/healthz" "token issuer (demo)"; then
     podman logs "$TOKEN_ISSUER_CONTAINER" >&2 || true
     exit 1
 fi
@@ -122,5 +133,6 @@ fi
 chmod 600 "${STATE_DIR}/access-token-secret"
 printf "\nDemo services are up.\n"
 printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_HOST_PORT"
+printf "  subject-token mint (loopback only): http://127.0.0.1:%s\n" "$TOKEN_ISSUER_DEMO_HOST_PORT"
 printf "  document services: %s ports 18101-18105 (engineering|finance|admin|hr|public)\n" "$(doc_endpoint_ip)"
 printf "  shared secret written to %s\n" "${STATE_DIR}/access-token-secret"
