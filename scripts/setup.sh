@@ -16,7 +16,7 @@ PODMAN_NETWORK=zt2 CLEANUP_EXISTING=1 bash "$ROOT/deploy/podman/spire/start-spir
 
 # shellcheck source=/dev/null
 source "$SPIRE_ENV_FILE"
-export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP
+export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP TOKEN_ISSUER_DEMO_HOST_PORT
 
 echo "== 2/5 OpenShell gateway =="
 bash "$ROOT/deploy/podman/scripts/start-gateway.sh"
@@ -77,7 +77,7 @@ for profile in alice-engineering alice-hr carol-hr nodelegation; do
 done
 
 echo "== 5/5 smoke test =="
-SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:8090/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}/demo-subject-token?user=alice" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 "${OS[@]}" provider create --name alice-eng --type zt2-alice-engineering-v2 \

@@ -8,11 +8,12 @@ mkdir -p "$STATE_DIR"
 
 # setup.sh writes the SPIRE state paths (including the agent's Workload
 # API socket) to <state>/spire.env; source it when the caller hasn't.
-if [[ (-z "${SPIRE_AGENT_SOCKET_HOST_PATH:-}" || -z "${ZT2_HOST_IP:-}") &&
-    -f "$STATE_DIR/spire.env" ]]; then
+if [[ (-z "${SPIRE_AGENT_SOCKET_HOST_PATH:-}" || -z "${ZT2_HOST_IP:-}" ||
+    -z "${TOKEN_ISSUER_DEMO_HOST_PORT:-}") && -f "$STATE_DIR/spire.env" ]]; then
     # shellcheck source=/dev/null
     source "$STATE_DIR/spire.env"
-    export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP
+    export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP \
+        TOKEN_ISSUER_DEMO_HOST_PORT
 fi
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 # shellcheck source=../deploy/podman/spire/common.sh
@@ -22,7 +23,7 @@ HR_URL="http://$(doc_endpoint_host hr):$(doc_endpoint_port hr)"
 ISSUER_LOCAL="http://127.0.0.1:8080"
 # The unauthenticated subject-token minter is served on the issuer's
 # loopback-only listener (see start-services.sh).
-DEMO_SUBJECT_URL="http://127.0.0.1:8090"
+DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}"
 
 sandbox_id() {
     # Capture before parsing: awk's early exit closes the pipe and the

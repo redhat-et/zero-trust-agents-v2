@@ -32,6 +32,8 @@ TOKEN_ISSUER_HOST_PORT="${TOKEN_ISSUER_HOST_PORT:-8080}"
 # only: the main port is published on the LAN for the gateway's
 # authenticated /token exchange, and must not carry the token minter.
 TOKEN_ISSUER_DEMO_HOST_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}"
+export TOKEN_ISSUER_DEMO_HOST_PORT
+write_env_line TOKEN_ISSUER_DEMO_HOST_PORT "$TOKEN_ISSUER_DEMO_HOST_PORT"
 
 # Document services are published on distinct host ports: the
 # supervisor's netns cannot resolve podman network aliases, and the
