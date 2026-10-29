@@ -5,6 +5,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${STATE_DIR:-$ROOT/.zt2-state}"
 mkdir -p "$STATE_DIR"
+
+# setup.sh writes the SPIRE state paths (including the agent's Workload
+# API socket) to <state>/spire.env; source it when the caller hasn't.
+if [[ -z "${SPIRE_AGENT_SOCKET_HOST_PATH:-}" && -f "$STATE_DIR/spire.env" ]]; then
+    # shellcheck source=/dev/null
+    source "$STATE_DIR/spire.env"
+    export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH
+fi
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 ENGINEERING_URL="http://192.168.127.254.nip.io:18101"
 HR_URL="http://192.168.127.254.nip.io:18104"
