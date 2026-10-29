@@ -16,7 +16,7 @@ PODMAN_NETWORK=zt2 CLEANUP_EXISTING=1 bash "$ROOT/deploy/podman/spire/start-spir
 
 # shellcheck source=/dev/null
 source "$SPIRE_ENV_FILE"
-export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH
+export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP
 
 echo "== 2/5 OpenShell gateway =="
 bash "$ROOT/deploy/podman/scripts/start-gateway.sh"
@@ -27,13 +27,18 @@ bash "$ROOT/deploy/podman/scripts/start-services.sh"
 echo "== 4/5 provider profiles =="
 # Profiles are templates: endpoint host/port (and allowed_ips) depend on
 # the host OS, so render them into the state dir before importing.
-PROFILE_DEPTS=("engineering" "engineering" "hr" "engineering")
+# Each profile declares the department endpoint it targets (alice-hr
+# and nodelegation exercise a denial against the engineering service).
+profile_dept() {
+    case "$1" in
+        carol-hr) echo hr ;;
+        *) echo engineering ;;
+    esac
+}
 profile_out_dir="${STATE_DIR}/profiles"
 mkdir -p "$profile_out_dir"
-i=0
 for profile in alice-engineering alice-hr carol-hr nodelegation; do
-    dept="${PROFILE_DEPTS[$i]}"
-    i=$((i + 1))
+    dept="$(profile_dept "$profile")"
     sed -e "s/@DOC_HOST@/$(doc_endpoint_host "$dept")/" \
         -e "s/@DOC_PORT@/$(doc_endpoint_port "$dept")/" \
         -e "$(doc_allowed_ips_subst)" \

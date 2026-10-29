@@ -108,18 +108,6 @@ doc_allowed_ips_subst() {
     printf 's/@ALLOWED_IPS@/allowed_ips: [%s]/' "$(doc_endpoint_ip)"
 }
 
-# doc_publish_addr — where document services publish their host ports.
-# Linux must bind all interfaces (the supervisor reaches them via the
-# host's LAN address); macOS binds loopback inside the podman VM, which
-# the VM's gateway address reaches.
-doc_publish_addr() {
-    if [[ "$ZT2_HOST_OS" == "linux" ]]; then
-        printf ""
-    else
-        printf "127.0.0.1:"
-    fi
-}
-
 normalize_podman_socket_path() {
     local socket_path="$1"
     if [[ "$socket_path" == unix://* ]]; then

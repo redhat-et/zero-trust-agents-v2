@@ -114,6 +114,12 @@ fi
 
 write_env_line SPIRE_STATE_DIR "$SPIRE_STATE_DIR"
 write_env_line SPIRE_AGENT_SOCKET_HOST_PATH "$SPIRE_AGENT_SOCKET_HOST_PATH"
+# Persist the detected host address: profiles and scenario URLs are
+# rendered from it, so later runs must reuse the setup-time value even
+# if the host's primary interface changes.
+if [[ -n "${ZT2_HOST_IP:-}" ]]; then
+    write_env_line ZT2_HOST_IP "$ZT2_HOST_IP"
+fi
 
 printf "\nSPIRE is up.\n"
 printf "  containers: %s %s %s\n" "$SPIRE_SERVER_CONTAINER" "$SPIRE_AGENT_CONTAINER" "$SPIRE_OIDC_CONTAINER" >&2

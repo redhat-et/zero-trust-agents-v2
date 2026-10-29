@@ -2,6 +2,8 @@
 # Tear down the demo: sandboxes, providers, gateway, services, SPIRE.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../deploy/podman/spire/common.sh
+source "$ROOT/deploy/podman/spire/common.sh"
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 
 echo "== sandboxes, providers, profiles =="
@@ -31,13 +33,14 @@ done
 echo "== network =="
 podman network rm zt2 >/dev/null 2>&1 || true
 
-case "$(uname -s)" in
-    Darwin)
-        echo "Done. VM hosts entry for token-issuer.zt-demo.svc was left in place"
-        echo "(harmless; remove with: podman machine ssh \"sudo sed -i '' /token-issuer.zt-demo.svc/d /etc/hosts\")."
-        ;;
-    *)
-        echo "Done. Hosts entry for token-issuer.zt-demo.svc was left in place"
-        echo "(harmless; remove with: sudo sed -i '/token-issuer.zt-demo.svc/d' /etc/hosts)."
-        ;;
-esac
+if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+    if grep -q "token-issuer.zt-demo.svc" /etc/hosts; then
+        echo "== hosts entry =="
+        sudo sed -i "/token-issuer.zt-demo.svc/d" /etc/hosts
+        echo "Removed token-issuer.zt-demo.svc from /etc/hosts."
+    fi
+    echo "Done."
+else
+    echo "Done. VM hosts entry for token-issuer.zt-demo.svc was left in place"
+    echo "(harmless; remove with: podman machine ssh \"sudo sed -i '' /token-issuer.zt-demo.svc/d /etc/hosts\")."
+fi

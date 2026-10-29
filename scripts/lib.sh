@@ -8,10 +8,11 @@ mkdir -p "$STATE_DIR"
 
 # setup.sh writes the SPIRE state paths (including the agent's Workload
 # API socket) to <state>/spire.env; source it when the caller hasn't.
-if [[ -z "${SPIRE_AGENT_SOCKET_HOST_PATH:-}" && -f "$STATE_DIR/spire.env" ]]; then
+if [[ (-z "${SPIRE_AGENT_SOCKET_HOST_PATH:-}" || -z "${ZT2_HOST_IP:-}") &&
+    -f "$STATE_DIR/spire.env" ]]; then
     # shellcheck source=/dev/null
     source "$STATE_DIR/spire.env"
-    export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH
+    export SPIRE_STATE_DIR SPIRE_AGENT_SOCKET_HOST_PATH ZT2_HOST_IP
 fi
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 # shellcheck source=../deploy/podman/spire/common.sh
@@ -33,7 +34,9 @@ register_sandbox() {
     local id="$1" out
     out="$(TRUST_DOMAIN=openshell.local SPIRE_SERVER_CONTAINER=zt2-spire-server \
         bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "$id" 2>/dev/null)" || return 1
-    grep "SPIFFE ID" <<<"$out" | head -1
+    # grep's exit status would abort the caller under set -e on a
+    # non-match; capture-then-parse keeps that a normal empty result.
+    grep "SPIFFE ID" <<<"$out" | head -1 || true
     # Let the entry reach the agent's cache before the first sandbox
     # request: the supervisor caches a failed token grant, so a request
     # racing entry registration fails every later retry too. (Gating on
