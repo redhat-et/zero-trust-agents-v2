@@ -31,5 +31,13 @@ done
 echo "== network =="
 podman network rm zt2 >/dev/null 2>&1 || true
 
-echo "Done. VM hosts entry for token-issuer.zt-demo.svc was left in place"
-echo "(harmless; remove with: podman machine ssh \"sudo sed -i '' /token-issuer.zt-demo.svc/d /etc/hosts\")."
+case "$(uname -s)" in
+    Darwin)
+        echo "Done. VM hosts entry for token-issuer.zt-demo.svc was left in place"
+        echo "(harmless; remove with: podman machine ssh \"sudo sed -i '' /token-issuer.zt-demo.svc/d /etc/hosts\")."
+        ;;
+    *)
+        echo "Done. Hosts entry for token-issuer.zt-demo.svc was left in place"
+        echo "(harmless; remove with: sudo sed -i '/token-issuer.zt-demo.svc/d' /etc/hosts)."
+        ;;
+esac

@@ -48,7 +48,7 @@ run podman run -d \
     --name "$TOKEN_ISSUER_CONTAINER" \
     --network "$NETWORK" \
     --network-alias token-issuer.zt-demo.svc \
-    -p "127.0.0.1:${TOKEN_ISSUER_HOST_PORT}:8080" \
+    -p "$(doc_publish_addr)${TOKEN_ISSUER_HOST_PORT}:8080" \
     -v "${REPO_ROOT}/config/users.yaml:/config/users.yaml:ro,z" \
     -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
     -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
@@ -74,7 +74,7 @@ for i in "${!DOC_DEPTS[@]}"; do
         --name "zt2-document-${dept}" \
         --network "$NETWORK" \
         --network-alias "document-${dept}" \
-        -p "127.0.0.1:${port}:8080" \
+        -p "$(doc_publish_addr)${port}:8080" \
         -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
         -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
         -e "DEPARTMENT=${dept}" \
@@ -82,19 +82,31 @@ for i in "${!DOC_DEPTS[@]}"; do
         "${IMAGE_PREFIX}/document-service"
 done
 
-# Map the issuer's .svc name for the supervisor's netns (host network in
-# the podman VM): the supervisor cannot resolve podman network aliases,
-# and the token endpoint's host must pass profile lint (.svc shape).
-# Upstream's README sanctions a hosts entry for exactly this case.
-if ! podman machine ssh "grep -q token-issuer.zt-demo.svc /etc/hosts" 2>/dev/null; then
-    printf "Adding token-issuer.zt-demo.svc to the podman VM's /etc/hosts\n" >&2
-    podman machine ssh "sudo sh -c 'echo 192.168.127.254 token-issuer.zt-demo.svc >> /etc/hosts'"
+# Map the issuer's .svc name for the supervisor's netns: the token
+# endpoint's host must pass profile lint (.svc shape), and the
+# supervisor — on the podman VM's host network (macOS) or the host
+# netns (Linux) — cannot resolve podman network aliases. Upstream's
+# README sanctions a hosts entry for exactly this case.
+if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+    if ! grep -q "token-issuer.zt-demo.svc" /etc/hosts; then
+        printf "Adding token-issuer.zt-demo.svc to /etc/hosts (sudo)\n" >&2
+        if ! sudo sh -c "echo '$(doc_endpoint_ip) token-issuer.zt-demo.svc' >> /etc/hosts"; then
+            printf "warning: could not edit /etc/hosts; the supervisor may fail to resolve the issuer\n" >&2
+        fi
+    fi
+else
+    if ! podman machine ssh "grep -q token-issuer.zt-demo.svc /etc/hosts" 2>/dev/null; then
+        printf "Adding token-issuer.zt-demo.svc to the podman VM's /etc/hosts\n" >&2
+        podman machine ssh "sudo sh -c 'echo 192.168.127.254 token-issuer.zt-demo.svc >> /etc/hosts'"
+    fi
 fi
 
 # 0600 on every run: the redirect alone won't tighten an existing file.
 (umask 077 && printf "%s\n" "$ACCESS_TOKEN_SECRET" >"${STATE_DIR}/access-token-secret")
 chmod 600 "${STATE_DIR}/access-token-secret"
+doc_summary="$(doc_endpoint_ip) ports 18101-18105 (engineering|finance|admin|hr|public)"
 printf "\nDemo services are up.\n"
 printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_HOST_PORT"
-printf "  document services: host.containers.internal ports 18101-18105 (engineering|finance|admin|hr|public)\n"
+printf "  document services: %s
+" "$doc_summary"
 printf "  shared secret written to %s\n" "${STATE_DIR}/access-token-secret"

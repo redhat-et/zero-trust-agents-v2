@@ -7,6 +7,19 @@ set -euo pipefail
 
 SPIRE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Host OS: darwin (podman machine) or linux (native rootless podman).
+# Everything that differs between the two — gateway gRPC advertisement,
+# document-service endpoint naming, and the issuer hosts entry — branches
+# on this. Override with ZT2_HOST_OS for testing.
+ZT2_HOST_OS="${ZT2_HOST_OS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
+case "$ZT2_HOST_OS" in
+    darwin | linux) ;;
+    *)
+        printf "unsupported host OS: %s (set ZT2_HOST_OS to darwin or linux)\n" "$ZT2_HOST_OS" >&2
+        exit 1
+        ;;
+esac
+
 PODMAN_NETWORK="${PODMAN_NETWORK:-zt2}"
 TRUST_DOMAIN="${TRUST_DOMAIN:-openshell.local}"
 SPIRE_AGENT_PARENT_ID="${SPIRE_AGENT_PARENT_ID:-spiffe://${TRUST_DOMAIN}/openshell/spire-agent/demo}"
@@ -43,6 +56,67 @@ cleanup_container() {
 ensure_network() {
     if ! podman network exists "$PODMAN_NETWORK" >/dev/null 2>&1; then
         run podman network create "$PODMAN_NETWORK"
+    fi
+}
+
+# The supervisor runs network=host on both OSes and resolves declared
+# endpoints through the host's resolver, where podman network aliases
+# don't resolve — so document services are always reached via published
+# host ports named through nip.io. The sandbox denies RFC 1918
+# destinations unless allowed_ips declares them, so the endpoint IP is
+# allow-listed too. On macOS that IP is the podman VM's fixed gateway
+# (192.168.127.254); on Linux it is the real host's primary address,
+# detected at setup time (override with ZT2_HOST_IP).
+if [[ "$ZT2_HOST_OS" == "linux" && -z "${ZT2_HOST_IP:-}" ]]; then
+    ZT2_HOST_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}')"
+    if [[ -z "$ZT2_HOST_IP" ]]; then
+        printf "could not detect the host's primary IPv4 address; set ZT2_HOST_IP\n" >&2
+        exit 1
+    fi
+fi
+
+doc_endpoint_ip() {
+    if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+        printf "%s\n" "$ZT2_HOST_IP"
+    else
+        printf "192.168.127.254\n"
+    fi
+}
+
+doc_endpoint_host() {
+    printf "%s.nip.io\n" "$(doc_endpoint_ip)"
+}
+
+# doc_endpoint_port DEPT — the published host port (identical on both
+# OSes; the host-side publishes are what the supervisor connects to).
+doc_endpoint_port() {
+    local dept="$1"
+    case "$dept" in
+        engineering) printf "18101\n" ;;
+        finance) printf "18102\n" ;;
+        admin) printf "18103\n" ;;
+        hr) printf "18104\n" ;;
+        public) printf "18105\n" ;;
+        *) return 1 ;;
+    esac
+}
+
+# doc_allowed_ips_subst - sed program substituting the @ALLOWED_IPS@
+# profile template token: the allowed_ips line on both OSes (the
+# destination is RFC 1918 on both).
+doc_allowed_ips_subst() {
+    printf 's/@ALLOWED_IPS@/allowed_ips: [%s]/' "$(doc_endpoint_ip)"
+}
+
+# doc_publish_addr — where document services publish their host ports.
+# Linux must bind all interfaces (the supervisor reaches them via the
+# host's LAN address); macOS binds loopback inside the podman VM, which
+# the VM's gateway address reaches.
+doc_publish_addr() {
+    if [[ "$ZT2_HOST_OS" == "linux" ]]; then
+        printf ""
+    else
+        printf "127.0.0.1:"
     fi
 }
 

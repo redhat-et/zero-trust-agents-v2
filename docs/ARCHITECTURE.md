@@ -103,6 +103,44 @@ environment shaped the deployment, all discovered the hard way:
   `host.containers.internal` — a hosts entry upstream's README
   explicitly sanctions for host-running components.
 
+## Linux host networking notes (Fedora/RHEL)
+
+On a Linux host the same components run without the podman-machine VM,
+and the macOS workarounds collapse (`ZT2_HOST_OS` selects the layout):
+
+- The supervisor's host network is the real host network, so the
+  gateway is advertised at its loopback publish
+  (`http://127.0.0.1:18083`).
+- The layout mirrors macOS structurally: supervisors run
+  `network=host` and resolve endpoints through the host's resolver, so
+  document services stay on published host ports 18101-18105, declared
+  as `<host-ip>.nip.io` endpoints with `allowed_ips: [<host-ip>]` (the
+  supervisor resolves `host.containers.internal` to the host's LAN
+  address, not a link-local one, and denies undeclared RFC 1918
+  destinations). The host IP is detected at setup time, and the
+  publishes bind all interfaces so the LAN address reaches them.
+- The `.svc` lint rule is platform-independent, so the issuer keeps the
+  `token-issuer.zt-demo.svc` alias plus a host `/etc/hosts` entry
+  mapping it to the host's LAN IP (added with sudo by `setup.sh`), and
+  the issuer publishes on all interfaces. The hosts entry matters for
+  the gateway too: aardvark forwards unknown names to the host's
+  resolver, so an entry pointing at 127.0.0.1 would make containers
+  resolve the issuer to their own loopback.
+
+Two Linux-only pitfalls found the hard way (both fixed in the scripts):
+
+- `podman run --label k:v` stores the whole string as a label *key*
+  with an empty value — label arguments must use `k=v`. The scenario
+  scripts' out-of-band SVID fetches pass labels this way.
+- The gateway's container watcher treats any container carrying a
+  sandbox's labels as that sandbox: a short-lived probe container with
+  those labels gets the real sandbox deleted when the probe exits.
+  `fetch_svid` therefore only runs after a sandbox's last use.
+
+Provider profiles are templates (`deploy/podman/profiles/*.yaml.in`)
+rendered per host OS into the state dir at setup time; the same
+services, SPIRE wiring, and scenario scripts run unchanged.
+
 ## Attribution
 
 - SPIRE configs and registration scripts adapted from

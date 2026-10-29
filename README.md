@@ -35,6 +35,27 @@ $ scripts/teardown.sh
 The setup script adds one line to the podman VM's `/etc/hosts`
 (`token-issuer.zt-demo.svc`); teardown explains how to remove it.
 
+## Quick start (Fedora/RHEL, rootless podman)
+
+Requirements: podman 5.x (rootless, `systemctl --user enable --now
+podman.socket`), `openshell` CLI 0.1.6 (rpm from upstream releases), Go
+1.22+, curl, python3, and sudo for one `/etc/hosts` edit.
+
+```console
+$ make build          # Go services
+$ scripts/setup.sh    # SPIRE + gateway + services + profiles
+$ scripts/scenario1.sh
+  ...
+$ scripts/teardown.sh
+```
+
+The host OS is detected automatically (`ZT2_HOST_OS` overrides). The
+gateway is advertised at its loopback publish and the issuer's `.svc`
+alias is a host `/etc/hosts` entry rather than a podman-VM one; the
+document-service layout is structurally the same as macOS (published
+ports + nip.io + `allowed_ips`, with the host's real IP detected at
+setup). See the networking notes in `docs/ARCHITECTURE.md`.
+
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — components, token flow, claim schema
