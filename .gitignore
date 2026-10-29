@@ -1,0 +1,17 @@
+# Go
+bin/
+*.test
+*.out
+token-issuer/token-issuer
+document-service/document-service
+
+# Demo local state
+.zt2-state/
+zt2-tmp/
+*.log
+.env
+
+# Agent working files
+.superpowers/
+docs/superpowers/
+.DS_Store
