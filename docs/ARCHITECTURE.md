@@ -39,19 +39,19 @@ token-mint time**.
 
 1. The sandbox curls a document service. The supervisor intercepts the
    request (the sandbox's network is brokered; it has no direct egress).
-2. The supervisor fetches the sandbox's SPIFFE JWT-SVID from the SPIRE
+1. The supervisor fetches the sandbox's SPIFFE JWT-SVID from the SPIRE
    agent's Workload API socket.
-3. The supervisor asks the gateway for a token (dynamic token grant).
-4. The gateway verifies its own SVID, then exchanges the stored user
+1. The supervisor asks the gateway for a token (dynamic token grant).
+1. The gateway verifies its own SVID, then exchanges the stored user
    subject token at the issuer. The intermediate token's audience is the
    sandbox's SPIFFE ID — it is bound to exactly one supervisor.
-5. The supervisor exchanges the intermediate for the final scoped
+1. The supervisor exchanges the intermediate for the final scoped
    access token. **This is where v2's permission intersection lives**:
    `user.departments ∩ requested scope` must be non-empty, and the
    minted scope is exactly the intersection. A rogue SPIFFE ID (not
    under the supervisor prefix) is rejected one step earlier, at SVID
    verification.
-6. The supervisor injects the final token into the outbound request; the
+1. The supervisor injects the final token into the outbound request; the
    document service checks audience and scope.
 
 ## Token claim schema

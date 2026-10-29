@@ -166,6 +166,23 @@ func TestFinalExchangeUnknownUser(t *testing.T) {
 	}
 }
 
+func TestFinalExchangePublicAudience(t *testing.T) {
+	// The public document service is reachable through the token path:
+	// a final token with audience=public carries no department scope.
+	ts := newExchangeServer(t, supervisorJWKS())
+	status, body := postToken(t, ts, finalForm(t, "alice", "public"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200, got %d: %v", status, body)
+	}
+	claims := decodeFinal(t, body)
+	if !claims.HasAudience("public") {
+		t.Errorf("aud: %v", claims["aud"])
+	}
+	if claims.String("scope") != "" {
+		t.Errorf("scope must be empty (no department intersection), got %q", claims.String("scope"))
+	}
+}
+
 func TestFinalExchangeWrongTokenType(t *testing.T) {
 	ts := newExchangeServer(t, supervisorJWKS())
 	// Subject token presented where an intermediate is expected.

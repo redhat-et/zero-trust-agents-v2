@@ -130,7 +130,13 @@ func Verify(secret, token string) (Claims, error) {
 	if err != nil {
 		return nil, err
 	}
-	if exp := claims.Int64("exp"); exp > 0 && exp <= time.Now().Unix() {
+	// exp is mandatory: a demo whose thesis is short-lived tokens must
+	// not accept one that never expires.
+	exp := claims.Int64("exp")
+	if exp == 0 {
+		return nil, errors.New("token has no exp claim")
+	}
+	if exp <= time.Now().Unix() {
 		return nil, errors.New("token expired")
 	}
 	return claims, nil

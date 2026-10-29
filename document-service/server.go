@@ -66,7 +66,7 @@ func (s *docServer) authenticate(r *http.Request) (tokens.Claims, string) {
 		return nil, "invalid_token"
 	}
 	if !claims.HasAudience(s.department) {
-		return nil, "insufficient_scope"
+		return nil, "invalid_audience"
 	}
 	return claims, ""
 }

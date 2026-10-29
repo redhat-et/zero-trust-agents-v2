@@ -17,17 +17,18 @@ ID="$(create_sandbox alice-s2 alice-hr-prov-s2-$$)"
 register_sandbox "$ID" >/dev/null
 echo "  sandbox: $ID (SPIFFE ID registered)"
 
-# The request must be denied. The supervisor's token grant fails
-# (insufficient_department_permissions at the issuer), which surfaces as
-# a proxy error, never as the document.
-DENIED=1
-if output="$("${OS[@]}" sandbox exec --name alice-s2 --no-tty -- \
-    curl -sS --max-time 20 "$ENGINEERING_URL/documents/DOC-001" 2>&1)"; then
-    if [[ "$output" == *"Engineering Roadmap"* ]]; then
-        fail "sandbox unexpectedly fetched the engineering doc: $output"
+# The request must be denied at the supervisor's proxy (502) because the
+# token grant fails; the issuer-side proof below pins the exact reason.
+RESP="$("${OS[@]}" sandbox exec --name alice-s2 --no-tty -- \
+    curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+    "$ENGINEERING_URL/documents/DOC-001" 2>&1 || true)"
+if [[ "$RESP" != "502" ]]; then
+    if [[ "$RESP" == "200" ]]; then
+        fail "sandbox unexpectedly fetched the engineering doc"
     fi
+    fail "expected the proxy to deny with 502, got: $RESP"
 fi
-pass "request denied — no token minted with an engineering scope for an hr-only capability"
+pass "request denied at the proxy — no token minted with an engineering scope for an hr-only capability"
 
 # Issuer-side proof: drive the exact exchange the supervisor would make
 # (alice's subject token -> intermediate -> final with hr scope) and

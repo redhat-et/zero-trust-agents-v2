@@ -64,6 +64,17 @@ func TestVerifyExpired(t *testing.T) {
 	}
 }
 
+func TestVerifyMissingExp(t *testing.T) {
+	// A demo whose thesis is short-lived tokens must not accept one that
+	// never expires.
+	c := Claims(testClaims)
+	delete(c, "exp")
+	tok := signOrFail(t, c)
+	if _, err := Verify("secret", tok); err == nil {
+		t.Fatal("want error for token without exp")
+	}
+}
+
 func TestVerifyWrongSecret(t *testing.T) {
 	tok := signOrFail(t, testClaims)
 	if _, err := Verify("other", tok); err == nil {

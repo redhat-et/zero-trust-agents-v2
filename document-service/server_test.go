@@ -107,20 +107,21 @@ func TestGetDocumentHappyPath(t *testing.T) {
 
 func TestWrongAudience(t *testing.T) {
 	// Review focus 4: token scoped for engineering used against the
-	// finance service -> 403, not 404.
+	// finance service -> 403 with a code distinct from a scope failure,
+	// so tests can tell the two controls apart.
 	finTS := newDocServer(t, "finance")
 	status, body := get(t, finTS, "/documents", finalToken(t, "alice", "engineering", "engineering"))
 	if status != http.StatusForbidden {
 		t.Fatalf("want 403, got %d: %v", status, body)
 	}
-	if body["error"] != "insufficient_scope" {
+	if body["error"] != "invalid_audience" {
 		t.Errorf("error: %v", body["error"])
 	}
 }
 
-func TestInsufficientScopeForDocument(t *testing.T) {
-	// Alice holds engineering scope but asks for a finance-only doc on
-	// the finance service... audience is right for finance, scope is not.
+func TestInsufficientScope(t *testing.T) {
+	// Right audience for finance, wrong scope for DOC-002 (finance-only):
+	// the scope control denies, distinct from the audience control.
 	finTS := newDocServer(t, "finance")
 	status, body := get(t, finTS, "/documents/DOC-002", finalToken(t, "alice", "finance", "engineering"))
 	if status != http.StatusForbidden || body["error"] != "insufficient_scope" {
@@ -129,13 +130,20 @@ func TestInsufficientScopeForDocument(t *testing.T) {
 }
 
 func TestMultiDepartmentDocEitherScope(t *testing.T) {
-	// DOC-005 (finance+engineering): accessible with either scope.
+	// DOC-005 (finance+engineering): accessible with either scope...
 	for _, dept := range []string{"engineering", "finance"} {
 		ts := newDocServer(t, dept)
 		status, body := get(t, ts, "/documents/DOC-005", finalToken(t, "alice", dept, dept))
 		if status != http.StatusOK {
 			t.Fatalf("dept %s: want 200, got %d: %v", dept, status, body)
 		}
+	}
+	// ...but an engineering-scoped token against the finance service is
+	// an audience failure even though the scope would cover DOC-005.
+	finTS := newDocServer(t, "finance")
+	status, body := get(t, finTS, "/documents/DOC-005", finalToken(t, "alice", "engineering", "engineering"))
+	if status != http.StatusForbidden || body["error"] != "invalid_audience" {
+		t.Fatalf("want 403 invalid_audience, got %d %v", status, body)
 	}
 }
 

@@ -113,13 +113,20 @@ run podman run -d \
     "$GATEWAY_IMAGE" \
     --config "$config_path"
 
+gateway_ready=0
 for _ in $(seq 1 120); do
     if curl -fsS "http://127.0.0.1:${GATEWAY_HEALTH_PORT}/readyz" >/dev/null 2>&1 ||
         curl -fsS "http://127.0.0.1:${GATEWAY_HEALTH_PORT}/healthz" >/dev/null 2>&1; then
+        gateway_ready=1
         break
     fi
     sleep 0.5
 done
+if [[ "$gateway_ready" != "1" ]]; then
+    podman logs "$GATEWAY_CONTAINER" >&2 || true
+    printf "OpenShell gateway did not become ready at health port %s\n" "$GATEWAY_HEALTH_PORT" >&2
+    exit 1
+fi
 
 # Register the gateway's SPIFFE entry. On macOS the gateway runs as a
 # container, so the selector is the container label — not unix:uid,

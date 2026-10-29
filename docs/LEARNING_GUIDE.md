@@ -1,9 +1,9 @@
-# Learning Guide
+# Learning guide
 
 A guided tour of the security ideas in this demo, ordered so each builds
 on the last. Skim `docs/ARCHITECTURE.md` first for the component map.
 
-## 1. The agent is a workload, not a user
+## The agent is a workload, not a user
 
 An OpenShell sandbox has no credentials of its own. Its identity is a
 SPIFFE ID (`spiffe://openshell.local/openshell/sandbox/<uuid>`) issued by
@@ -16,7 +16,7 @@ because its SPIFFE ID is not under the registered supervisor prefix.
 label-based selector), and the issuer's prefix check in
 `token-issuer/jwks.go` (`VerifySVID`).
 
-## 2. Delegation is a stored token, exchange is the mechanism
+## Delegation is a stored token, exchange is the mechanism
 
 "Alice's sandbox" means the gateway holds Alice's subject token (minted
 by `GET /demo-subject-token?user=alice`, carrying her `departments`
@@ -26,7 +26,7 @@ sandbox never sees Alice's token — see step 3.
 **Where to look:** `deploy/podman/profiles/*.yaml` (the
 `subject_token` credential and `token_grant` block).
 
-## 3. Capabilities are configured, never requested
+## Capabilities are configured, never requested
 
 The audience names the target service; the scopes name the sandbox's
 capability — both come from the provider profile, matched on the
@@ -37,7 +37,7 @@ its supervisor does.
 **Where to look:** the `audience_overrides` in the profiles, and
 `docs/DEMO_SCENARIOS.md`'s permission matrix.
 
-## 4. The intersection is enforced at mint time
+## The intersection is enforced at mint time
 
 This is v2's headline difference from v1. At the final exchange
 (`token-issuer/server.go`, `handleSupervisorExchange`), the issuer looks
@@ -80,15 +80,15 @@ Two teaching notes hidden in the implementation:
   infer the protocol branch from an explicit declaration, not from
   which credential happens to parse.
 
-## 5. Audience binding stops replay
+## Audience binding stops replay
 
 The intermediate token's audience is the supervisor's SPIFFE ID — it is
 useless to any other sandbox. The final token's audience is the target
 department, so scenario 6's replay of an engineering token against the
-finance service fails at `403 insufficient_scope`. Short TTLs (300s)
+finance service fails at `403 invalid_audience`. Short TTLs (300s)
 bound the blast radius of any leaked token.
 
-## 6. The sandbox's network is not its own
+## The sandbox's network is not its own
 
 The sandbox container runs with no network; its resolv.conf points at a
 local broker inside the sandbox binary, and every connection is staged
@@ -104,8 +104,8 @@ the podman-machine specifics this demo had to accommodate.
 1. `internal/tokens/tokens.go` — what a verifier must check (alg
    pinning, constant-time compare; watch `TestVerifyAlgNone` and
    `TestVerifyAlgRS256` fail in `tokens_test.go`).
-2. `token-issuer/jwks.go` — P-1363 signature handling and the SPIFFE
+1. `token-issuer/jwks.go` — P-1363 signature handling and the SPIFFE
    prefix check.
-3. `token-issuer/server.go` — the three-token dispatch and the
+1. `token-issuer/server.go` — the three-token dispatch and the
    intersection.
-4. `document-service/server.go` — the minimal resource-server check.
+1. `document-service/server.go` — the minimal resource-server check.

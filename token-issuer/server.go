@@ -189,7 +189,7 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 }
 
 var supportedAudiences = map[string]bool{
-	"engineering": true, "finance": true, "admin": true, "hr": true,
+	"engineering": true, "finance": true, "admin": true, "hr": true, "public": true,
 }
 
 const finalTTL = 300
@@ -218,7 +218,9 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 	}
 	requested := strings.Fields(r.Form.Get("scope"))
 	intersection := intersect(user.Departments, requested)
-	if len(intersection) == 0 {
+	// The public service requires no department scope; every other
+	// audience demands a non-empty intersection.
+	if len(intersection) == 0 && audience != "public" {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error": "insufficient_department_permissions",
 		})

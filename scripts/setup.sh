@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export STATE_DIR="${STATE_DIR:-$PWD/.zt2-state}"
+export STATE_DIR="${STATE_DIR:-$ROOT/.zt2-state}"
 mkdir -p "$STATE_DIR"
 export SPIRE_ENV_FILE="${SPIRE_ENV_FILE:-$STATE_DIR/spire.env}"
 

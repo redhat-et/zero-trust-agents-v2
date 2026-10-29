@@ -62,13 +62,16 @@ fi
 echo "  sanity: token works against engineering service (200)"
 
 # The attack: replay the same token against the finance service.
+# DOC-005 is RequiredDepartments [finance, engineering], so the scope
+# check would pass with scope=engineering — only the audience check can
+# deny, making this assertion specifically about audience binding.
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
     -H "Authorization: Bearer $FINAL" \
-    "http://127.0.0.1:18102/documents/DOC-002")"
-BODY="$(curl -s -H "Authorization: Bearer $FINAL" "http://127.0.0.1:18102/documents/DOC-002")"
+    "http://127.0.0.1:18102/documents/DOC-005")"
+BODY="$(curl -s -H "Authorization: Bearer $FINAL" "http://127.0.0.1:18102/documents/DOC-005")"
 
-if [[ "$STATUS" == "403" && "$BODY" == *"insufficient_scope"* ]]; then
-    pass "finance service rejected the engineering-scoped token with 403 insufficient_scope"
+if [[ "$STATUS" == "403" && "$BODY" == *"invalid_audience"* ]]; then
+    pass "finance service rejected the engineering-audience token with 403 invalid_audience"
 else
-    fail "expected 403 insufficient_scope from finance service, got $STATUS: $BODY"
+    fail "expected 403 invalid_audience from finance service, got $STATUS: $BODY"
 fi

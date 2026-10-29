@@ -1,4 +1,4 @@
-# Demo Scenarios
+# Demo scenarios
 
 Each scenario is a script in `scripts/` — run them after `scripts/setup.sh`.
 Every script prints what it does and exits non-zero if the result differs
@@ -32,9 +32,9 @@ the token issuer.
 ## Running
 
 ```console
-$ scripts/setup.sh          # SPIRE + gateway + services + profiles
-$ scripts/scenario1.sh      # ... through scenario6.sh
-$ scripts/teardown.sh
+scripts/setup.sh          # SPIRE + gateway + services + profiles
+scripts/scenario1.sh      # ... through scenario6.sh
+scripts/teardown.sh
 ```
 
 ## What each scenario proves
@@ -45,24 +45,24 @@ $ scripts/teardown.sh
    intermediate token (audience = the sandbox's SPIFFE ID), exchanges
    that for a final scoped token, and injects it into the outbound
    request. The document service validates audience + scope.
-2. **Permission intersection** — same user, wrong capability: the issuer
+1. **Permission intersection** — same user, wrong capability: the issuer
    returns `403 insufficient_department_permissions` and no token is
    minted. The script also drives the exchange directly against the
    issuer so you can see the deny at the mint point.
-3. **No delegation** — the sandbox is launched from a profile whose
+1. **No delegation** — the sandbox is launched from a profile whose
    `subject_token` credential is absent. The gateway has nothing to
    exchange; the request never carries a token.
-4. **Another allowed path** — Carol and hr, proving the matrix is
+1. **Another allowed path** — Carol and hr, proving the matrix is
    data-driven, not hardcoded.
-5. **Rogue workload** — a container with a *validly signed* SVID whose
+1. **Rogue workload** — a container with a *validly signed* SVID whose
    SPIFFE ID (`spiffe://openshell.local/rogue/workload/1`) is not under
    the registered supervisor prefix. The issuer rejects the client
    assertion (`401 invalid_client_assertion`) before looking at any
    token: workload identity is the root of trust, not credentials a
    sandbox could have stolen. SPIRE cannot issue outside its trust
    domain, so "rogue" here means an unregistered path inside it.
-6. **Audience binding** — a valid engineering-scoped token replayed
-   against the finance service: `403 insufficient_scope`. The sandbox
+1. **Audience binding** — a valid engineering-scoped token replayed
+   against the finance service: `403 invalid_audience`. The sandbox
    never sees its injected token, so the replay is staged out-of-band
    with direct `/token` calls.
 
