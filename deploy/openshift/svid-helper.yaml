@@ -1,0 +1,36 @@
+# SVID helper pod for the OpenShift scenario harness (applied by
+# scripts/drivers/lib-openshift.sh with @POD_NAME@ and @ANNOTATIONS@
+# substituted — this file is never applied as-is). Runs spire-agent
+# against the CSI-mounted Workload API socket in the sandbox namespace,
+# so SPIRE attributes the fetch to whatever identity the annotations
+# select. For supervisor fetches the annotation is the sandbox's
+# openshell.ai/sandbox-id; for the rogue fetch it is an annotation no
+# ClusterSPIFFEID matches, and SPIRE refuses to mint.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: @POD_NAME@
+  namespace: zt2-sandboxes
+  annotations:
+@ANNOTATIONS@spec:
+  restartPolicy: Never
+  containers:
+    - name: spire-agent
+      image: ghcr.io/spiffe/spire-agent:1.12.4
+      command: ["sleep", "600"]
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
