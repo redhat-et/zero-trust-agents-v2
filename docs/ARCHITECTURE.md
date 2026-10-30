@@ -163,7 +163,8 @@ scenario harness selects the backend with `ZT2_DRIVER=podman|openshift`
 Namespaces are one trust tier each — this is load-bearing, not style:
 the issuer's gateway check is a prefix match on
 `spiffe://…/ns/openshell/sa/`, so the gateway's `ClusterSPIFFEID` is
-pod-selector-tightened and sandboxes live in their own
+pod-selector-tightened, the chart's fallback identity is excluded
+from the `openshell` namespace, and sandboxes live in their own
 `zt2-sandboxes` namespace. A sandbox pod must never be able to obtain
 an SVID under the gateway prefix; the deployment is verified against
 exactly that (see the design doc and

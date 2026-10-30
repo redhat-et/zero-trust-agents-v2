@@ -33,8 +33,12 @@ Two hardening steps for production:
    `ClusterSPIFFEID` namespaceSelector makes this a label change.
 
 The generic `/ns/<ns>/sa/<sa>` chart default (the `fallback` identity)
-is safe only in namespaces with a single trust tier; the demo's
-policies override it everywhere it matters.
+is safe only in namespaces with a single trust tier; the deployment
+excludes the `openshell` namespace from it and covers `zt-demo` with
+an explicit identity instead. The real boundary is namespace
+membership: whoever can create pods in `openshell`, or use its service
+accounts, can obtain a gateway-prefix SVID — treat that namespace as
+cluster-admin territory and gate it with RBAC accordingly.
 
 ## Secrets
 

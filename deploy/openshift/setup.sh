@@ -19,6 +19,7 @@ require_cmd openshell
 require_cmd curl
 require_cmd python3
 require_oc
+mkdir -p "$STATE_DIR"
 
 ZT2_QUAY_NS="${ZT2_QUAY_NS:-panni}"
 ZT2_IMAGE_TAG="${ZT2_IMAGE_TAG:-v2}"
@@ -129,7 +130,6 @@ echo "== 4/7 zt-demo services =="
 oc apply -f "$ROOT/deploy/openshift/zt-demo/namespace.yaml"
 if ! oc -n zt-demo get secret zt2-secrets >/dev/null 2>&1; then
     ACCESS_TOKEN_SECRET="$(openssl rand -hex 32)"
-    printf '%s' "$ACCESS_TOKEN_SECRET" >"$STATE_DIR/access-token-secret"
     oc -n zt-demo create secret generic zt2-secrets \
         --from-literal=access-token-secret="$ACCESS_TOKEN_SECRET" >/dev/null
 fi
@@ -175,8 +175,10 @@ oc -n openshell get secret openshell-client-tls -o jsonpath='{.data}' |
     python3 -c 'import json,sys,base64,os
 d = json.load(sys.stdin)
 for k, v in d.items():
-    with open(os.environ["MTLS_OUT"] + "/" + k, "wb") as f:
-        f.write(base64.b64decode(v))'
+    path = os.environ["MTLS_OUT"] + "/" + k
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(v))
+    os.chmod(path, 0o600)'
 if ! "${OS[@]}" status >/dev/null 2>&1; then
     printf "gateway registration did not authenticate (run: openshell status)\n" >&2
     exit 1

@@ -145,12 +145,31 @@ fetch_gateway_svid() {
 }
 
 # fetch_rogue_svid — request a rogue SPIFFE ID from a helper pod the
-# attestation policy deliberately does not match; SPIRE must refuse.
-# Returns non-zero, which scenario 5 treats as a pass.
+# attestation policy deliberately does not match. Exit codes:
+#   0 + token on stdout  — SPIRE minted the rogue SVID (issuer must
+#                          reject it; scenario 5's issuer-401 path)
+#   1                    — SPIRE refused (attestation policy held)
+#   2                    — indeterminate (infrastructure failure);
+#                          scenario 5 must FAIL, not pass
 fetch_rogue_svid() {
-    svid_helper "zt2-svid-rogue" "spiffe://openshell.local/rogue/workload/1" \
-        "zt2.rogue=true" || return 1
-    return 1
+    local out token
+    out="$(svid_helper "zt2-svid-rogue" \
+        "spiffe://openshell.local/rogue/workload/1" \
+        "zt2.rogue=true")" || true
+    if [[ -z "$out" ]]; then
+        printf "fetch_rogue_svid: indeterminate (no helper output)\n" >&2
+        return 2
+    fi
+    token="$(awk '/^\t/ {print $1; exit}' <<<"$out")"
+    if [[ -n "$token" ]]; then
+        echo "$token"
+        return 0
+    fi
+    if grep -q "no identity issued" <<<"$out"; then
+        return 1
+    fi
+    printf "fetch_rogue_svid: indeterminate (unexpected helper output)\n" >&2
+    return 2
 }
 
 # Host-side forwards the scenario scripts need (every scenario talks to

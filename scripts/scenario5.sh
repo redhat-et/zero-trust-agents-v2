@@ -17,12 +17,17 @@ scenario_header "Scenario 5: rogue sandbox (unregistered SPIFFE ID) requests a t
 # On Podman the rogue SVID can be minted (the entry is registered
 # against a dedicated container label) and the issuer must reject it;
 # on Kubernetes the attestation policy refuses to issue it at all.
-# Both outcomes are a pass — the identity check holds either way.
-if ! ROGUE_SVID="$(fetch_rogue_svid)"; then
+# Both outcomes are a pass — the identity check holds either way. An
+# indeterminate result (infrastructure failure) is a FAIL.
+ROGUE_SVID=""
+if ROGUE_SVID="$(fetch_rogue_svid)"; then
+    echo "  rogue SVID fetched (${#ROGUE_SVID} chars, validly signed by SPIRE)"
+elif [[ $? -eq 1 ]]; then
     pass "SPIRE refused to issue an identity outside the attestation policy — nothing to present"
     exit 0
+else
+    fail "rogue SVID fetch was indeterminate (infrastructure failure, not a policy refusal)"
 fi
-echo "  rogue SVID fetched (${#ROGUE_SVID} chars, validly signed by SPIRE)"
 
 # Attempt the intermediate exchange directly at the issuer, with a valid
 # subject token so the only thing that can deny is the rogue SVID.

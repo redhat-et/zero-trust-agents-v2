@@ -61,10 +61,11 @@ func NewJWKSVerifier(uri, spireIssuer, svidAudience string) JWKSVerifier {
 	if caPath := os.Getenv("SPIRE_JWKS_CA_FILE"); caPath != "" {
 		pool := x509.NewCertPool()
 		if !waitForCABundle(caPath, pool, 30*time.Second) {
-			log.Printf("jwks: no certificates parsed from SPIRE_JWKS_CA_FILE %s", caPath)
-		} else {
-			client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
+			log.Fatalf("jwks: no certificates readable from SPIRE_JWKS_CA_FILE %s after 30s", caPath)
 		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+		client.Transport = transport
 	}
 	return &jwksVerifier{
 		uri:         uri,

@@ -1,5 +1,5 @@
 # OpenShift variant of the Podman profile; placeholders are
-# substituted at setup time (@DOC_HOST@ -> document-<dept>.zt-demo.svc,
+# substituted at setup time (@DOC_HOST@ -> document-<dept>.zt-demo.svc.cluster.local,
 # the @ALLOWED_IPS@ line is deleted). See the Stage 2 design doc.
 # credential is optional, so the provider can be created without one —
 # the gateway then has nothing to exchange, and no token is minted.
