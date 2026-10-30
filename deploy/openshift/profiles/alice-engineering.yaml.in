@@ -1,0 +1,46 @@
+# OpenShift variant of the Podman profile; placeholders are
+# substituted at setup time (@DOC_HOST@ -> document-<dept>.zt-demo.svc,
+# the @ALLOWED_IPS@ line is deleted). See the Stage 2 design doc.
+# Capabilities are profile-configured, never sandbox-chosen: the
+# audience names the target service, the scopes name this sandbox's
+# capability.
+id: zt2-alice-engineering-v2
+display_name: Zero Trust v2 - Alice (engineering capability)
+description: Alice's subject token exchanged by the gateway for an engineering-capable sandbox
+category: other
+credentials:
+  - name: subject_token
+    description: Alice's subject token stored for gateway-side token exchange only
+    required: true
+  - name: access_token
+    description: Access token obtained via RFC 8693 token exchange
+    required: false
+    auth_style: bearer
+    header_name: Authorization
+    token_grant:
+      grant_type: token_exchange
+      token_endpoint: http://token-issuer.zt-demo.svc:8080/token
+      audience: engineering
+      jwt_svid_audience: http://token-issuer.zt-demo.svc:8080
+      client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-spiffe
+      scopes: [engineering]
+      cache_ttl_seconds: 60
+      subject_token:
+        source: provider_credential
+        credential: subject_token
+        subject_token_type: urn:ietf:params:oauth:token-type:access_token
+      audience_overrides:
+        - host: @DOC_HOST@
+          port: @DOC_PORT@
+          audience: engineering
+          scopes: [engineering]
+endpoints:
+  - host: @DOC_HOST@
+    port: @DOC_PORT@
+    @ALLOWED_IPS@
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl
+  - /usr/local/bin/curl
