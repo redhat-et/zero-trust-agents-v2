@@ -1,0 +1,318 @@
+# Per-department document services: one Deployment + Service each,
+# matching DOC_DEPTS in deploy/podman/scripts/start-services.sh. All
+# five are required: scenario 6 replays an engineering token against
+# finance (DOC-005) and scenario 3 health-checks engineering directly.
+#
+# The document service validates audience + scope on the final token
+# (iss check against ACCESS_TOKEN_ISSUER) and serves the department's
+# sample documents.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-engineering
+  namespace: zt-demo
+  labels:
+    app: document-engineering
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-engineering
+  template:
+    metadata:
+      labels:
+        app: document-engineering
+    spec:
+      containers:
+        - name: document-service
+          image: quay.io/panni/zt2-document-service:v2
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zt2-secrets
+                  key: access-token-secret
+            - name: ACCESS_TOKEN_ISSUER
+              value: http://token-issuer.zt-demo.svc:8080
+            - name: DEPARTMENT
+              value: "engineering"
+            - name: PORT
+              value: :8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-engineering
+  namespace: zt-demo
+spec:
+  selector:
+    app: document-engineering
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-finance
+  namespace: zt-demo
+  labels:
+    app: document-finance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-finance
+  template:
+    metadata:
+      labels:
+        app: document-finance
+    spec:
+      containers:
+        - name: document-service
+          image: quay.io/panni/zt2-document-service:v2
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zt2-secrets
+                  key: access-token-secret
+            - name: ACCESS_TOKEN_ISSUER
+              value: http://token-issuer.zt-demo.svc:8080
+            - name: DEPARTMENT
+              value: "finance"
+            - name: PORT
+              value: :8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-finance
+  namespace: zt-demo
+spec:
+  selector:
+    app: document-finance
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-admin
+  namespace: zt-demo
+  labels:
+    app: document-admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-admin
+  template:
+    metadata:
+      labels:
+        app: document-admin
+    spec:
+      containers:
+        - name: document-service
+          image: quay.io/panni/zt2-document-service:v2
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zt2-secrets
+                  key: access-token-secret
+            - name: ACCESS_TOKEN_ISSUER
+              value: http://token-issuer.zt-demo.svc:8080
+            - name: DEPARTMENT
+              value: "admin"
+            - name: PORT
+              value: :8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-admin
+  namespace: zt-demo
+spec:
+  selector:
+    app: document-admin
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-hr
+  namespace: zt-demo
+  labels:
+    app: document-hr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-hr
+  template:
+    metadata:
+      labels:
+        app: document-hr
+    spec:
+      containers:
+        - name: document-service
+          image: quay.io/panni/zt2-document-service:v2
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zt2-secrets
+                  key: access-token-secret
+            - name: ACCESS_TOKEN_ISSUER
+              value: http://token-issuer.zt-demo.svc:8080
+            - name: DEPARTMENT
+              value: "hr"
+            - name: PORT
+              value: :8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-hr
+  namespace: zt-demo
+spec:
+  selector:
+    app: document-hr
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-public
+  namespace: zt-demo
+  labels:
+    app: document-public
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-public
+  template:
+    metadata:
+      labels:
+        app: document-public
+    spec:
+      containers:
+        - name: document-service
+          image: quay.io/panni/zt2-document-service:v2
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zt2-secrets
+                  key: access-token-secret
+            - name: ACCESS_TOKEN_ISSUER
+              value: http://token-issuer.zt-demo.svc:8080
+            - name: DEPARTMENT
+              value: "public"
+            - name: PORT
+              value: :8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-public
+  namespace: zt-demo
+spec:
+  selector:
+    app: document-public
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

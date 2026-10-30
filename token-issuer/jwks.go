@@ -6,11 +6,15 @@ import (
 	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -46,13 +50,28 @@ type jwksVerifier struct {
 }
 
 // NewJWKSVerifier returns a JWKSVerifier that fetches keys from uri
-// (cached for 60s) and verifies SPIRE-issued JWT-SVIDs.
+// (cached for 60s) and verifies SPIRE-issued JWT-SVIDs. When the
+// SPIRE_JWKS_CA_FILE environment variable is set, the JWKS endpoint's
+// TLS certificate is verified against that CA file (the SPIFFE trust
+// bundle, written by spiffe-helper in the OpenShift deployment).
 func NewJWKSVerifier(uri, spireIssuer, svidAudience string) JWKSVerifier {
+	client := &http.Client{Timeout: 10 * time.Second}
+	if caPath := os.Getenv("SPIRE_JWKS_CA_FILE"); caPath != "" {
+		pool := x509.NewCertPool()
+		pemBytes, err := os.ReadFile(caPath)
+		if err != nil {
+			log.Printf("jwks: cannot read SPIRE_JWKS_CA_FILE %s: %v", caPath, err)
+		} else if !pool.AppendCertsFromPEM(pemBytes) {
+			log.Printf("jwks: no certificates parsed from SPIRE_JWKS_CA_FILE %s", caPath)
+		} else {
+			client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
+		}
+	}
 	return &jwksVerifier{
 		uri:         uri,
 		spireIssuer: spireIssuer,
 		svidAud:     svidAudience,
-		client:      &http.Client{Timeout: 10 * time.Second},
+		client:      client,
 	}
 }
 

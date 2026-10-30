@@ -1,0 +1,9 @@
+# The zt-demo namespace: token issuer and per-department document
+# services. Sandboxes connect from zt2-sandboxes; the NetworkPolicy in
+# networkpolicy.yaml restricts ingress to that namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zt-demo
+  labels:
+    app.kubernetes.io/part-of: zero-trust-agents-v2
