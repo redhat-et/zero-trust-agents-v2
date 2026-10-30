@@ -110,6 +110,17 @@ helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
     --set "pkiInitJob.serverDnsNames[0]=$ROUTE_HOST" \
     --wait
 oc -n openshell rollout status statefulset/openshell --timeout=300s
+# Supervisor pods (in zt2-sandboxes) mount the chart's client TLS
+# secret; without it they stay in ContainerCreating and sandboxes hang
+# in ConfigurationPending until the 300s admission timeout. Replace,
+# not apply: the exported yaml carries a stale resourceVersion.
+oc -n zt2-sandboxes delete secret openshell-client-tls --ignore-not-found >/dev/null
+oc get secret openshell-client-tls -n openshell -o json |
+    python3 -c 'import json,sys
+s = json.load(sys.stdin)
+s["metadata"] = {"name": s["metadata"]["name"], "namespace": "zt2-sandboxes"}
+json.dump(s, sys.stdout)' |
+    oc apply -n zt2-sandboxes -f - >/dev/null
 wait_route() {
     # The gateway's TLS cert is chart-generated (self-signed) and the
     # Route terminates passthrough, so: -k, and any HTTP response --
@@ -166,6 +177,9 @@ if ! "${OS[@]}" status >/dev/null 2>&1; then
     # which no script can complete). The add generates throwaway local
     # certs -- immediately overwritten with the chart's client bundle
     # (openshell-client-tls), whose CA also verifies the server cert.
+    # A stale 'zt2' registration from an earlier cluster points at a
+    # dead Route; remove it first or the add fails on the name.
+    openshell gateway remove zt2 >/dev/null 2>&1 || true
     openshell gateway add "https://$ROUTE_HOST" --name zt2 --local >/dev/null
 fi
 MTLS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateways/zt2/mtls"
