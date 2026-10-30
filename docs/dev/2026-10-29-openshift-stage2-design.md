@@ -71,17 +71,28 @@ the NVIDIA/OpenShell repository):
 
 ## Architecture
 
-Four layers on ROSA 4.22, in three namespaces:
+Four layers on ROSA 4.22, in four namespaces:
 
 ```text
-spire          SPIRE server, agents, controller-manager,
-               CSI driver, OIDC discovery provider
-openshell      OpenShell gateway (Helm chart, k8s compute driver),
-               Agent Sandbox controller
-zt-demo        token issuer, per-department document services
-               (sandboxes are created in the openshell namespace by
-               the Agent Sandbox controller)
+spire           SPIRE server, agents, controller-manager,
+                CSI driver, OIDC discovery provider
+openshell       OpenShell gateway (Helm chart, k8s compute driver),
+                Agent Sandbox controller — no sandboxes here
+zt2-sandboxes   sandbox pods (supervisor + workload), created by the
+                Agent Sandbox controller via server.sandboxNamespace
+zt-demo         token issuer, per-department document services
 ```
+
+Sandboxes get their own namespace deliberately: the gateway's
+`ClusterSPIFFEID` is namespace-scoped to `openshell`, and the issuer's
+gateway check is a prefix match on
+`spiffe://openshell.local/ns/openshell/sa/`. If sandbox pods shared the
+`openshell` namespace, every one of them would also receive an SVID
+under the gateway prefix — any sandbox holding a user subject token
+could perform the gateway's first exchange and mint an intermediate
+token for an arbitrary supervisor audience, while every scenario still
+passed. One namespace per trust tier is what makes the chart's default
+SA-based template safe.
 
 ### SPIRE
 
@@ -100,8 +111,9 @@ OpenShell's `ci/values-spire-stack.yaml` as the reference values:
     {{ index .PodMeta.Annotations "openshell.ai/sandbox-id" }}
   ```
 
-  namespace selector `openshell`, pod selector
-  `openshell.ai/managed-by: openshell` (as in upstream CI values).
+  namespace selector `zt2-sandboxes`, pod selector
+  `openshell.ai/managed-by: openshell` (as in upstream CI values,
+  with the namespace changed per the trust-tier separation above).
 - Gateway identity: in the upstream Kubernetes example the gateway's
   SVID is ServiceAccount-based,
   `spiffe://<trust-domain>/ns/openshell/sa/<service-account>` — the
@@ -145,7 +157,7 @@ claimed not to — verify on cluster and record the result).
   `openshell`.
 - `gatewayConfig` renders into `gateway.toml`:
 
-  - compute driver: Kubernetes, sandboxes in the `openshell`
+  - compute driver: Kubernetes, sandboxes in the `zt2-sandboxes`
     namespace (`server.sandboxNamespace`).
   - `provider_spiffe_workload_api_socket_path:
     /spiffe-workload-api/spire-agent.sock` (from upstream
@@ -175,9 +187,12 @@ claimed not to — verify on cluster and record the result).
   `http://token-issuer.zt-demo.svc`; a mismatch 401s every exchange,
   so the setup script sets it explicitly rather than inheriting it.
 - The unauthenticated `/demo-subject-token` minter stays on its own
-  listener (`:8090` in the image), exposed by a second, ClusterIP-only
-  Service and never by a Route — see
-  [Scenario harness](#scenario-harness-and-execution-model).
+  listener (`:8090` in the image) with **no Service at all** —
+  `oc port-forward deploy/token-issuer` targets the pod directly. A
+  ClusterIP Service, combined with the `zt-demo` ingress allow rule,
+  would make "mint a token as any user" reachable from every sandbox
+  pod; Stage 1 published it loopback-only and Stage 2 must not be
+  weaker — see [Scenario harness](#scenario-harness-and-execution-model).
 - Document services: one Deployment + Service for **each of the five
   departments** — engineering, finance, admin, hr, public — matching
   `DOC_DEPTS` in `deploy/podman/scripts/start-services.sh`. Two is not
@@ -185,10 +200,9 @@ claimed not to — verify on cluster and record the result).
   **finance** service (DOC-005), and scenario 3 health-checks
   engineering directly.
 - NetworkPolicy on `zt-demo`: default-deny ingress plus an allow rule
-  for the `openshell` namespace. Supervisor pods connect
-  cross-namespace, so the policy has to permit that explicitly — but
-  leaving `zt-demo` default-allow in a zero-trust demo undercuts the
-  thesis, and the policy is a few lines. Production recommendations
+  for the `zt2-sandboxes` namespace (where supervisor pods connect
+  from). Leaving `zt-demo` default-allow in a zero-trust demo undercuts
+  the thesis, and the policy is a few lines. Production recommendations
   then narrow it from namespace-wide to supervisor pods.
 - Images: built from the existing `deploy/podman/Containerfile.*`
   (no new Dockerfiles) for linux/amd64 on the RHEL 10 homelab host
@@ -245,7 +259,7 @@ it. Stage 2's real work is giving it a second one, selected by
 | Gateway endpoint | `http://127.0.0.1:18083`, hardcoded | `https://<route>` from setup state |
 | Sandbox cleanup | `podman ps … \| xargs podman rm -f` | `oc delete`, or leave it to the Sandbox controller |
 | `register_sandbox` | `deploy/podman/spire/register-sandbox.sh` | No-op; wait for the `ClusterSPIFFEID`-minted SVID |
-| `fetch_svid` | `podman run spire-agent` on the host socket | Helper pod + `oc exec` (below) |
+| `fetch_svid` | `podman run spire-agent` on the host socket | Supervisor/rogue: helper pod + `oc exec`; gateway: `oc debug` ephemeral container on the gateway pod |
 | Doc service URLs | `nip.io` host, ports 18101-18105 | `oc port-forward`, or in-cluster `.svc` names |
 | `ISSUER_LOCAL` | `http://127.0.0.1:8080` | `oc port-forward` to the issuer Service |
 
@@ -260,15 +274,20 @@ Two decisions drive the rest:
   and writes `TOKEN_ISSUER_DEMO_HOST_PORT` into the state file exactly
   as Stage 1 does, leaving `DEMO_SUBJECT_URL` untouched. `teardown.sh`
   kills it.
-- **Out-of-band SVIDs: helper pod + `oc exec`.** Scenarios 2, 5 and 6
-  need a JWT-SVID fetched by a process SPIRE will attribute to a given
-  identity. On Podman that is a labelled throwaway container; on
-  Kubernetes it is a short-lived pod in `openshell` carrying the
-  `openshell.ai/sandbox-id` annotation the `ClusterSPIFFEID` keys on,
-  with the CSI-mounted Workload API socket, driven by
-  `oc exec -- spire-agent api fetch jwt`. The Podman version's warning
-  does not apply here: there is no container watcher to confuse, so the
-  helper pod cannot delete the real sandbox out from under the test.
+- **Out-of-band SVIDs: helper pod + `oc exec`, except the gateway.**
+  Scenarios 2, 5 and 6 need a JWT-SVID fetched by a process SPIRE will
+  attribute to a given identity. On Podman that is a labelled throwaway
+  container; on Kubernetes it is a short-lived pod in `zt2-sandboxes`
+  carrying the `openshell.ai/sandbox-id` annotation the
+  `ClusterSPIFFEID` keys on, with the CSI-mounted Workload API socket,
+  driven by `oc exec -- spire-agent api fetch jwt`. The Podman
+  version's warning does not apply here: there is no container watcher
+  to confuse, so the helper pod cannot delete the real sandbox out from
+  under the test. The gateway SVID is different: no selector-based
+  helper can be allowed to mint it (that is the impersonation the
+  namespace separation exists to prevent), so scenarios 2 and 6 fetch it
+  with `oc debug` attaching an ephemeral `spire-agent` container to the
+  real gateway pod, sharing its CSI-mounted Workload API socket.
 
 Scenario 5 gets *better* in the port. A rogue identity on Kubernetes is
 a pod the `ClusterSPIFFEID` deliberately does not match — a more
@@ -352,5 +371,7 @@ Resolved during review on 2026-10-29:
 | Document services | All five departments, not two — scenario 6 needs finance |
 | `zt-demo` NetworkPolicy | Default-deny + allow `openshell`, in demo scope |
 | Subject-token minter | `oc port-forward`, never a Route |
-| Out-of-band SVID fetch | Helper pod in `openshell` + `oc exec` |
+| Out-of-band SVID fetch | Supervisor/rogue: helper pod in `zt2-sandboxes` + `oc exec`; gateway: `oc debug` on the gateway pod |
 | Scenario portability | `ZT2_DRIVER` seam in `scripts/lib.sh` |
+| Sandbox namespace | `zt2-sandboxes`, separate from the gateway — keeps the gateway `ClusterSPIFFEID` (and its prefix-checked trust) from matching sandbox pods |
+| Issuer/document env | `SPIRE_ISSUER` (JWKS `iss` check) and `ACCESS_TOKEN_ISSUER` (document-service `iss` check) set explicitly on both Deployments; code defaults carry Podman aliases |
