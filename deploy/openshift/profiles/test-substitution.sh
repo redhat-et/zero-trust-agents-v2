@@ -12,10 +12,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# profile -> department (mirrors the Podman profiles)
+# profile -> department (mirrors profile_dept in the Stage 1 setup:
+# alice-hr targets the engineering service with an hr capability —
+# the denial scenario)
 declare -A DEPT=(
     [alice-engineering]=engineering
-    [alice-hr]=hr
+    [alice-hr]=engineering
     [carol-hr]=hr
     [nodelegation]=engineering
 )
