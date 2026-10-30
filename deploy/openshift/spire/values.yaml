@@ -21,17 +21,15 @@ global:
     trustDomain: openshell.local
     jwtIssuer: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local
     namespaces:
-      # The chart creates the namespaces itself: with global.openshift
-      # and the OIDC discovery provider enabled, it labels the server
-      # namespace pod-security enforce=privileged (the provider mounts
-      # the CSI socket) and disables OpenShift's SCC label sync on it.
-      create: true
+      # setup.sh pre-creates the namespaces with the OpenShift
+      # pod-security labels the CSI driver and OIDC provider need
+      # (enforce=privileged, SCC label sync off): the chart must not
+      # own them, so Helm adoption never gets in the way.
+      create: false
       server:
         name: spire
-        create: true
       system:
         name: spire-system
-        create: true
 
 spire-server:
   # Demo-only CA subject (required by the chart in recommended mode).

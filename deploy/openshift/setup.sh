@@ -40,42 +40,56 @@ fi
 ensure_pull_secret() {
     local ns="$1"
     if oc -n "$ns" get secret zt2-quay >/dev/null 2>&1; then
-        return 0
-    fi
-    # Build it from the local podman auth.json if possible.
-    local auth_json="${XDG_CONFIG_HOME:-$HOME/.config}/containers/auth.json"
-    if [[ -f "$auth_json" ]] && command -v yq >/dev/null 2>&1; then
-        local b64auth
-        b64auth="$(yq -r '.auths["quay.io"].auth // ""' "$auth_json")"
-        if [[ -n "$b64auth" ]]; then
-            printf '{"auths":{"quay.io":{"auth":"%s"}}}' "$b64auth" |
-                oc -n "$ns" create secret docker-registry zt2-quay \
-                    --from-file=.dockerconfigjson=/dev/stdin >/dev/null &&
-                return 0
+        :
+    else
+        # Build it from the local podman auth.json if possible.
+        local auth_json="${XDG_CONFIG_HOME:-$HOME/.config}/containers/auth.json"
+        if [[ -f "$auth_json" ]] && command -v yq >/dev/null 2>&1; then
+            local b64auth
+            b64auth="$(yq -r '.auths["quay.io"].auth // ""' "$auth_json")"
+            if [[ -n "$b64auth" ]]; then
+                printf '{"auths":{"quay.io":{"auth":"%s"}}}' "$b64auth" |
+                    oc -n "$ns" create secret docker-registry zt2-quay \
+                        --from-file=.dockerconfigjson=/dev/stdin >/dev/null
+            fi
         fi
     fi
-    printf "quay.io pull secret 'zt2-quay' missing in namespace %s.\n" "$ns" >&2
-    printf "Fix (after podman login quay.io):\n" >&2
-    printf "  oc -n %s create secret docker-registry zt2-quay \\\n" "$ns" >&2
-    printf "    --from-file=.dockerconfigjson=<(podman login --get-login quay.io >/dev/null; cat \$XDG_CONFIG_HOME/containers/auth.json)\n" >&2
-    printf "or make the quay.io/%s/zt2-* repos public.\n" "$ZT2_QUAY_NS" >&2
-    exit 1
+    if ! oc -n "$ns" get secret zt2-quay >/dev/null 2>&1; then
+        printf "quay.io pull secret 'zt2-quay' missing in namespace %s.\n" "$ns" >&2
+        printf "Fix (after podman login quay.io):\n" >&2
+        printf "  oc -n %s create secret docker-registry zt2-quay \\\n" "$ns" >&2
+        printf "    --from-file=.dockerconfigjson=<(podman login --get-login quay.io >/dev/null; cat \$XDG_CONFIG_HOME/containers/auth.json)\n" >&2
+        printf "or make the quay.io/%s/zt2-* repos public.\n" "$ZT2_QUAY_NS" >&2
+        exit 1
+    fi
+    # Link it to the default service account so every pod in the
+    # namespace can pull (the manifests do not carry imagePullSecrets).
+    oc -n "$ns" secrets link default zt2-quay --for=pull >/dev/null 2>&1 || true
 }
 
 echo "== 1/7 SPIRE (hardened charts) =="
 helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/ >/dev/null 2>&1 || true
 helm repo update spiffe >/dev/null
-# The CRDs are cluster-scoped; the release metadata lives in default.
-# The spire release creates its own namespaces (values:
-# namespaces.create=true with the OpenShift pod-security labels) -- do
-# NOT --create-namespace it, the chart must own them.
+# Pre-create the SPIRE namespaces with the OpenShift labels the chart's
+# own namespace templates would apply (global.openshift + the OIDC
+# provider's CSI mount): enforce=privileged and SCC label sync off.
+# The chart is configured with namespaces.create=false so Helm never
+# fights over ownership of a namespace it did not create.
+for ns in spire spire-system; do
+    oc create namespace "$ns" >/dev/null 2>&1 || true
+    oc label namespace "$ns" --overwrite \
+        pod-security.kubernetes.io/enforce=privileged \
+        pod-security.kubernetes.io/warn=privileged \
+        pod-security.kubernetes.io/audit=privileged \
+        security.openshift.io/scc.podSecurityLabelSync=false
+done
 helm upgrade --install spire-crds spiffe/spire-crds --version "$SPIRE_CRDS_VERSION" \
-    -n default --wait
+    -n spire --wait
 # Wait for the CRDs to be established before the server release (which
 # applies ClusterSPIFFEIDs) races them.
 oc wait --for=condition=Established crd/clusterspiffeids.spire.spiffe.io --timeout=120s
 helm upgrade --install spire spiffe/spire --version "$SPIRE_CHART_VERSION" \
-    -f "$ROOT/deploy/openshift/spire/values.yaml" --wait
+    -n spire -f "$ROOT/deploy/openshift/spire/values.yaml" --wait
 
 echo "== 2/7 Agent Sandbox controller =="
 oc apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml
@@ -84,6 +98,7 @@ oc -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --
 echo "== 3/7 OpenShell gateway =="
 oc create namespace openshell >/dev/null 2>&1 || true
 oc create namespace zt2-sandboxes >/dev/null 2>&1 || true
+oc apply -f "$ROOT/deploy/openshift/zt-demo/namespace.yaml"
 ensure_pull_secret openshell
 ensure_pull_secret zt-demo
 APPS_DOMAIN="$(oc get ingresscontroller default -n openshift-ingress-operator -o jsonpath='{.status.domain}')"
@@ -95,8 +110,12 @@ helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
     --wait
 oc -n openshell rollout status statefulset/openshell --timeout=300s
 wait_route() {
+    # The gateway's TLS cert is chart-generated (self-signed) and the
+    # Route terminates passthrough, so: -k, and any HTTP response --
+    # including the gRPC listener's 404 -- proves the Route is
+    # admitted and the gateway is answering.
     for _ in $(seq 1 30); do
-        if curl -fsS --max-time 5 "https://$ROUTE_HOST/healthz" >/dev/null 2>&1; then
+        if curl -ksS --max-time 5 -o /dev/null "https://$ROUTE_HOST/" 2>/dev/null; then
             return 0
         fi
         sleep 5
@@ -142,7 +161,25 @@ done
 echo "== 6/7 provider profiles =="
 OS=(openshell --gateway zt2 --gateway-endpoint "https://$ROUTE_HOST")
 if ! "${OS[@]}" status >/dev/null 2>&1; then
-    openshell gateway add "https://$ROUTE_HOST" --name zt2 >/dev/null
+    # Registering a remote https gateway: --local selects the mTLS
+    # registration type (a plain https add assumes browser edge auth,
+    # which no script can complete). The add generates throwaway local
+    # certs -- immediately overwritten with the chart's client bundle
+    # (openshell-client-tls), whose CA also verifies the server cert.
+    openshell gateway add "https://$ROUTE_HOST" --name zt2 --local >/dev/null
+fi
+MTLS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateways/zt2/mtls"
+mkdir -p "$MTLS_DIR"
+export MTLS_OUT="$MTLS_DIR"
+oc -n openshell get secret openshell-client-tls -o jsonpath='{.data}' |
+    python3 -c 'import json,sys,base64,os
+d = json.load(sys.stdin)
+for k, v in d.items():
+    with open(os.environ["MTLS_OUT"] + "/" + k, "wb") as f:
+        f.write(base64.b64decode(v))'
+if ! "${OS[@]}" status >/dev/null 2>&1; then
+    printf "gateway registration did not authenticate (run: openshell status)\n" >&2
+    exit 1
 fi
 # Profiles are immutable per ID: clear the dependency chain (sandboxes
 # -> providers -> profiles) from any earlier run first.
