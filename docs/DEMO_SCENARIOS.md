@@ -50,6 +50,36 @@ scripts/scenario1.sh      # ... through scenario6.sh
 scripts/teardown.sh
 ```
 
+## Running on OpenShift
+
+The same scenarios run against a ROSA/OpenShift 4.19+ cluster with the
+Kubernetes compute driver — the production-representative path.
+Prerequisites: `oc` logged in, Helm 3, the `openshell` CLI, and the
+service images pushed to quay.io
+(`deploy/openshift/build-images.sh`, run from a linux/amd64 host).
+If the quay repositories are private, `setup.sh` creates the
+`zt2-quay` pull secret in-cluster from your local podman
+credentials automatically.
+
+```bash
+deploy/openshift/build-images.sh
+deploy/openshift/setup.sh   # SPIRE + gateway + services + profiles
+ZT2_DRIVER=openshell scripts/scenario1.sh      # ... through scenario6.sh
+deploy/openshift/teardown.sh
+```
+
+The differences from the Podman path:
+
+- Agent identity comes from `ClusterSPIFFEID` workload attestation
+  (one unique SVID per sandbox pod) instead of manual SPIRE
+  registration entries.
+- Scenario scripts run on your laptop against the gateway's OpenShift
+  Route; sandbox pods reach the document services via in-cluster DNS,
+  the laptop reaches them via `oc port-forward`.
+- Scenario 5's rogue identity is refused by the attestation policy
+  itself (no SVID is minted), which is the pass condition on this
+  driver — a stronger demonstration than the issuer-side 401.
+
 ## What each scenario proves
 
 1. **Allowed path** — the full chain: the sandbox's curl is intercepted

@@ -65,13 +65,17 @@ ensure_pull_secret() {
 echo "== 1/7 SPIRE (hardened charts) =="
 helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/ >/dev/null 2>&1 || true
 helm repo update spiffe >/dev/null
+# The CRDs are cluster-scoped; the release metadata lives in default.
+# The spire release creates its own namespaces (values:
+# namespaces.create=true with the OpenShift pod-security labels) -- do
+# NOT --create-namespace it, the chart must own them.
 helm upgrade --install spire-crds spiffe/spire-crds --version "$SPIRE_CRDS_VERSION" \
-    -n spire --create-namespace --wait
+    -n default --wait
 # Wait for the CRDs to be established before the server release (which
 # applies ClusterSPIFFEIDs) races them.
 oc wait --for=condition=Established crd/clusterspiffeids.spire.spiffe.io --timeout=120s
 helm upgrade --install spire spiffe/spire --version "$SPIRE_CHART_VERSION" \
-    -n spire -f "$ROOT/deploy/openshift/spire/values.yaml" --wait
+    -f "$ROOT/deploy/openshift/spire/values.yaml" --wait
 
 echo "== 2/7 Agent Sandbox controller =="
 oc apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml

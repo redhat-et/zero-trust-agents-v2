@@ -10,12 +10,35 @@
 # restricted SCC; any exception found on-cluster is recorded in
 # docs/dev/openshift-stage2-findings.md.
 global:
+  openshift: true
   spire:
+    # recommendations enabled: apply the chart's recommended namespace
+    # pod-security labels (with global.openshift + the OIDC provider,
+    # the server namespace gets enforce=privileged for the CSI socket).
+    recommendations:
+      enabled: true
     clusterName: zt2-rosa
     trustDomain: openshell.local
     jwtIssuer: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local
+    namespaces:
+      # The chart creates the namespaces itself: with global.openshift
+      # and the OIDC discovery provider enabled, it labels the server
+      # namespace pod-security enforce=privileged (the provider mounts
+      # the CSI socket) and disables OpenShift's SCC label sync on it.
+      create: true
+      server:
+        name: spire
+        create: true
+      system:
+        name: spire-system
+        create: true
 
 spire-server:
+  # Demo-only CA subject (required by the chart in recommended mode).
+  caSubject:
+    country: US
+    organization: Zero Trust Agents v2
+    commonName: zt2 demo CA
   # Demo: single replica. The JWT-SVID TTL matches the upstream
   # reference (token grants mint fresh SVIDs per exchange).
   replicaCount: 1
