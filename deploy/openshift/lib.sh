@@ -28,8 +28,13 @@ wait_rollout() {
 STATE_FILE="${STATE_DIR:-$ROOT/.zt2-state}/openshift.env"
 state_set() {
     mkdir -p "$(dirname "$STATE_FILE")"
-    grep -v "^export $1=" "$STATE_FILE" 2>/dev/null || true >"$STATE_FILE.tmp"
-    printf 'export %s="%s"\n' "$1" "$2" >>"$STATE_FILE.tmp"
+    # The redirect must bind to grep (not to the `|| true` fallback):
+    # `grep ... > tmp || true` keeps existing lines in tmp; a missing
+    # state file leaves tmp empty, which is also correct.
+    {
+        grep -v "^export $1=" "$STATE_FILE" 2>/dev/null || true
+        printf 'export %s="%s"\n' "$1" "$2"
+    } >"$STATE_FILE.tmp"
     mv "$STATE_FILE.tmp" "$STATE_FILE"
 }
 

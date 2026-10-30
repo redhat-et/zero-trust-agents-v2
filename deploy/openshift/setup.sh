@@ -205,7 +205,7 @@ for profile in alice-engineering alice-hr carol-hr nodelegation; do
     dept="$(profile_dept "$profile")"
     # Same substitution contract as profiles/test-substitution.sh: the
     # @ALLOWED_IPS@ line is DELETED, not blanked.
-    awk -v host="document-${dept}.zt-demo.svc" -v port="8080" '
+    awk -v host="document-${dept}.zt-demo.svc.cluster.local" -v port="8080" '
         /@ALLOWED_IPS@/ { next }
         { gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port); print }
     ' "$ROOT/deploy/openshift/profiles/$profile.yaml.in" \
@@ -238,5 +238,5 @@ OpenShift demo environment ready.
   minter forward: http://127.0.0.1:${DEMO_PORT} (pid $FORWARD_PID)
   state:          $STATE_DIR/openshift.env
 
-Run scenarios: ZT2_DRIVER=openshell scripts/scenario{1..6}.sh
+Run scenarios: ZT2_DRIVER=openshift scripts/scenario{1..6}.sh
 EOF

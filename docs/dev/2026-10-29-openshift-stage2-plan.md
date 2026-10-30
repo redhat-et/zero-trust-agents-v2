@@ -281,7 +281,7 @@ git commit -s -m "feat: OpenShift setup and teardown scripts"
 
 **Interfaces:**
 - Consumes: `openshift.env` from Task 8; the Task 1 driver contract (identical function names).
-- Produces: a complete second driver; scenarios run with `ZT2_DRIVER=openshell`.
+- Produces: a complete second driver; scenarios run with `ZT2_DRIVER=openshift`.
 
 - [ ] **Step 1: Write the driver**
 
@@ -334,7 +334,7 @@ Expected: converges without errors (stale-profile chain works).
 
 - [ ] **Step 4: All six scenarios**
 
-Run: `ZT2_DRIVER=openshell scripts/scenario{1..6}.sh` in order.
+Run: `ZT2_DRIVER=openshift scripts/scenario{1..6}.sh` in order.
 Expected: all six pass. Scenario 5 should pass via the attestation-refusal path. If scenario 1 401s, check `JWT_SVID_AUDIENCE` and `SPIRE_ISSUER` first (Review focus). Record Route TLS passthrough behavior (spec verification item) and whether the issuer's JWKS fetch from `zt-demo` → `spire` crosses any chart-shipped NetworkPolicy in `spire` (if so, add the allow rule to Task 6's policy and record it).
 
 - [ ] **Step 5: Record findings**

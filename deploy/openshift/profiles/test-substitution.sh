@@ -22,9 +22,15 @@ declare -A DEPT=(
     [nodelegation]=engineering
 )
 
+# Full FQDNs: the sandbox's DNS proxy matches endpoint hosts exactly,
+# and the workload's resolver has no search domains — the short .svc
+# form NXDOMAINs inside sandboxes (the gateway and supervisors resolve
+# it fine, which is why the token-issuer URLs can stay short).
+FQDN_SUFFIX=".zt-demo.svc.cluster.local"
+
 # substitute FILE DEPT — the exact transformation setup.sh performs.
 substitute() {
-    awk -v host="document-$2.zt-demo.svc" -v port="8080" '
+    awk -v host="document-$2${FQDN_SUFFIX}" -v port="8080" '
         /@ALLOWED_IPS@/ { next }
         { gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port); print }
     ' "$1"
@@ -35,7 +41,7 @@ pass() { printf "  \033[32m✅ PASS\033[0m %s\n" "$1"; }
 
 for profile in "${!DEPT[@]}"; do
     dept="${DEPT[$profile]}"
-    expected_host="document-${dept}.zt-demo.svc"
+    expected_host="document-${dept}${FQDN_SUFFIX}"
     out="$(substitute "$HERE/$profile.yaml.in" "$dept")"
 
     # 1. no placeholder survives

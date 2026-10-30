@@ -12,9 +12,11 @@ set -euo pipefail
 
 OS=(openshell --gateway zt2 --gateway-endpoint "https://$ZT2_GATEWAY_ROUTE")
 
-# In-sandbox URLs: sandbox pods resolve in-cluster service DNS.
-ENGINEERING_URL="http://document-engineering.zt-demo.svc:8080"
-HR_URL="http://document-hr.zt-demo.svc:8080"
+# In-sandbox URLs: sandbox pods resolve in-cluster service DNS — and
+# the sandbox resolver has no search domains, so full FQDNs are
+# required (short .svc forms NXDOMAIN inside sandboxes).
+ENGINEERING_URL="http://document-engineering.zt-demo.svc.cluster.local:8080"
+HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 
 # Host-side URLs via lazily-started oc port-forwards. PIDs are recorded
 # for teardown; the minter forward belongs to setup.sh and is only
@@ -71,15 +73,18 @@ supervisor_logs() {
     oc -n zt2-sandboxes logs -l "openshell.ai/sandbox-id=$1" -c supervisor 2>&1
 }
 
-# svid_helper POD_NAME ANNOTATION... — apply the helper pod manifest
-# with the given annotations substituted, wait for it, echo its name.
-# The helper runs spire-agent with the CSI-mounted Workload API socket
-# in the sandbox namespace, so SPIRE attributes the fetch to the
-# identity the annotations select. There is no container watcher on
-# Kubernetes: the helper cannot delete the real sandbox (the Podman
-# WARNING does not apply).
+# svid_helper POD_NAME SPIFFE_ID ANNOTATION... — apply the helper pod
+# manifest, wait for it to finish, print its logs, and return success
+# only if the pod Succeeded. The helper runs spire-agent api fetch jwt
+# with the CSI-mounted Workload API socket in the sandbox namespace,
+# so SPIRE attributes the fetch to the identity the annotations
+# select; the fetch IS the container command (the spire-agent image is
+# distroless -- no shell to keep alive), so the pod terminating is the
+# fetch finishing. There is no container watcher on Kubernetes: the
+# helper cannot delete the real sandbox (the Podman WARNING does not
+# apply).
 svid_helper() {
-    local pod="$1"; shift
+    local pod="$1" spiffe_id="$2"; shift 2
     local annotations="" a k v
     for a in "$@"; do
         k="${a%%=*}"; v="${a#*=}"
@@ -88,60 +93,63 @@ svid_helper() {
     done
     # awk via ENVIRON (not -v): the annotation block is multiline and
     # both BSD sed and BSD awk reject newlines in substitution values.
-    ANN="$annotations" awk -v pod="$pod" '
+    ANN="$annotations" awk -v pod="$pod" -v sid="$spiffe_id" '
         BEGIN { ann = ENVIRON["ANN"] }
-        { gsub(/@POD_NAME@/, pod); gsub(/@ANNOTATIONS@/, ann); print }
+        { gsub(/@POD_NAME@/, pod); gsub(/@ANNOTATIONS@/, ann); gsub(/@SPIFFE_ID@/, sid); print }
     ' "$ROOT/deploy/openshift/svid-helper.yaml" |
         oc -n zt2-sandboxes apply -f - >/dev/null
-    oc -n zt2-sandboxes wait --for=condition=Ready "pod/$pod" --timeout=120s >/dev/null
-}
-
-svid_helper_fetch() {
-    # svid_helper_fetch POD_NAME SPIFFE_ID — run the JWT-SVID fetch
-    # inside a ready helper pod and print the token.
-    oc -n zt2-sandboxes exec "$1" -- \
-        /opt/spire/bin/spire-agent api fetch jwt \
-        -socketPath /spiffe-workload-api/spire-agent.sock \
-        -audience "http://token-issuer.zt-demo.svc:8080" \
-        -spiffeID "$2" 2>/dev/null |
-        awk '/^\t/ {print $1; exit}'
+    local phase=""
+    for _ in $(seq 1 30); do
+        phase="$(oc -n zt2-sandboxes get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+        [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
+        sleep 2
+    done
+    oc -n zt2-sandboxes logs "$pod" 2>/dev/null || true
+    oc -n zt2-sandboxes delete pod "$pod" --ignore-not-found >/dev/null 2>&1 || true
+    [[ "$phase" == "Succeeded" ]]
 }
 
 fetch_supervisor_svid() {
-    local id="$1" token=""
-    svid_helper "zt2-svid-$id" "openshell.ai/sandbox-id=$id" || return 1
-    token="$(svid_helper_fetch "zt2-svid-$id" "spiffe://openshell.local/openshell/sandbox/$id")" || true
-    oc -n zt2-sandboxes delete pod "zt2-svid-$id" --ignore-not-found >/dev/null 2>&1 || true
+    local token
+    token="$(svid_helper "zt2-svid-$1" \
+        "spiffe://openshell.local/openshell/sandbox/$1" \
+        "openshell.ai/sandbox-id=$1" |
+        awk '/^\t/ {print $1; exit}')" || return 1
     [[ -n "$token" ]] || return 1
     echo "$token"
 }
 
-# fetch_gateway_svid — NO helper pod: a selector-matched helper is the
-# impersonation the trust-tier separation exists to prevent. Attach an
-# ephemeral spire-agent container to the real gateway pod instead,
-# sharing its CSI-mounted Workload API socket.
+# fetch_gateway_svid — a helper pod in the openshell namespace running
+# AS the gateway's ServiceAccount: the SA-based ClusterSPIFFEID mints
+# the gateway identity for it. This needs the RBAC to create pods in
+# openshell and use its service account — the same trust an ephemeral
+# debug container on the gateway pod needs, and nothing a sandbox
+# holds. (An oc debug ephemeral container was tried first: the agent's
+# container locator cannot reliably attribute ephemeral containers, so
+# the fetch fails.)
 fetch_gateway_svid() {
-    local gw_spiffe_id="spiffe://openshell.local/ns/openshell/sa/openshell"
-    oc debug -n openshell statefulset/openshell --image=ghcr.io/spiffe/spire-agent:1.12.4 -- \
-        /opt/spire/bin/spire-agent api fetch jwt \
-        -socketPath /spiffe-workload-api/spire-agent.sock \
-        -audience "http://token-issuer.zt-demo.svc:8080" \
-        -spiffeID "$gw_spiffe_id" 2>/dev/null |
-        awk '/^\t/ {print $1; exit}'
+    oc -n openshell delete pod zt2-gw-svid --ignore-not-found >/dev/null 2>&1 || true
+    oc -n openshell apply -f "$ROOT/deploy/openshift/svid-helper-gateway.yaml" >/dev/null
+    local phase=""
+    for _ in $(seq 1 30); do
+        phase="$(oc -n openshell get pod zt2-gw-svid -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+        [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
+        sleep 2
+    done
+    local token
+    token="$(oc -n openshell logs zt2-gw-svid 2>/dev/null |
+        awk '/^\t/ {print $1; exit}')" || true
+    oc -n openshell delete pod zt2-gw-svid --ignore-not-found >/dev/null 2>&1 || true
+    [[ -n "$token" ]] || return 1
+    echo "$token"
 }
 
 # fetch_rogue_svid — request a rogue SPIFFE ID from a helper pod the
 # attestation policy deliberately does not match; SPIRE must refuse.
 # Returns non-zero, which scenario 5 treats as a pass.
 fetch_rogue_svid() {
-    svid_helper "zt2-svid-rogue" "zt2.rogue=true" || return 1
-    local out=""
-    out="$(svid_helper_fetch "zt2-svid-rogue" "spiffe://openshell.local/rogue/workload/1")" || true
-    oc -n zt2-sandboxes delete pod "zt2-svid-rogue" --ignore-not-found >/dev/null 2>&1 || true
-    if [[ -n "$out" ]]; then
-        echo "$out"
-        return 0
-    fi
+    svid_helper "zt2-svid-rogue" "spiffe://openshell.local/rogue/workload/1" \
+        "zt2.rogue=true" || return 1
     return 1
 }
 
@@ -151,3 +159,17 @@ fetch_rogue_svid() {
 ensure_forward "$ISSUER_LOCAL_PORT" service/token-issuer
 ensure_forward "$ENGINEERING_LOCAL_PORT" service/document-engineering
 ensure_forward "$FINANCE_LOCAL_PORT" service/document-finance
+
+# The minter forward is owned by setup.sh, but it dies when the issuer
+# rolls (a new pod replaces the forward's target) — restart it if the
+# listener is gone.
+DEMO_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
+if ! curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1; then
+    kill "$(cat "$STATE_DIR/openshift-forward.pid" 2>/dev/null)" 2>/dev/null || true
+    oc -n zt-demo port-forward deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
+    echo $! >"$STATE_DIR/openshift-forward.pid"
+    for _ in $(seq 1 15); do
+        curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break
+        sleep 2
+    done
+fi

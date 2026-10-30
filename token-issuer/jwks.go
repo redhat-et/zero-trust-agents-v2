@@ -53,15 +53,14 @@ type jwksVerifier struct {
 // (cached for 60s) and verifies SPIRE-issued JWT-SVIDs. When the
 // SPIRE_JWKS_CA_FILE environment variable is set, the JWKS endpoint's
 // TLS certificate is verified against that CA file (the SPIFFE trust
-// bundle, written by spiffe-helper in the OpenShift deployment).
+// bundle, written by spiffe-helper in the OpenShift deployment). The
+// sidecar writes the bundle a few seconds after pod start, so the
+// read is retried for up to 30s before giving up.
 func NewJWKSVerifier(uri, spireIssuer, svidAudience string) JWKSVerifier {
 	client := &http.Client{Timeout: 10 * time.Second}
 	if caPath := os.Getenv("SPIRE_JWKS_CA_FILE"); caPath != "" {
 		pool := x509.NewCertPool()
-		pemBytes, err := os.ReadFile(caPath)
-		if err != nil {
-			log.Printf("jwks: cannot read SPIRE_JWKS_CA_FILE %s: %v", caPath, err)
-		} else if !pool.AppendCertsFromPEM(pemBytes) {
+		if !waitForCABundle(caPath, pool, 30*time.Second) {
 			log.Printf("jwks: no certificates parsed from SPIRE_JWKS_CA_FILE %s", caPath)
 		} else {
 			client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
@@ -72,6 +71,22 @@ func NewJWKSVerifier(uri, spireIssuer, svidAudience string) JWKSVerifier {
 		spireIssuer: spireIssuer,
 		svidAud:     svidAudience,
 		client:      client,
+	}
+}
+
+// waitForCABundle reads pemBytes from path into pool, retrying until
+// the deadline (the spiffe-helper sidecar may not have written it yet).
+func waitForCABundle(path string, pool *x509.CertPool, deadline time.Duration) bool {
+	deadlineAt := time.Now().Add(deadline)
+	for {
+		pemBytes, err := os.ReadFile(path)
+		if err == nil && pool.AppendCertsFromPEM(pemBytes) {
+			return true
+		}
+		if time.Now().After(deadlineAt) {
+			return false
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

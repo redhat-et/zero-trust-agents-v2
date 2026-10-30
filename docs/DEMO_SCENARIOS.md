@@ -64,7 +64,7 @@ credentials automatically.
 ```bash
 deploy/openshift/build-images.sh
 deploy/openshift/setup.sh   # SPIRE + gateway + services + profiles
-ZT2_DRIVER=openshell scripts/scenario1.sh      # ... through scenario6.sh
+ZT2_DRIVER=openshift scripts/scenario1.sh      # ... through scenario6.sh
 deploy/openshift/teardown.sh
 ```
 

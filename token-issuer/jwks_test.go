@@ -298,3 +298,25 @@ func caFile(t *testing.T, ts *httptest.Server) string {
 	}
 	return path
 }
+
+// TestJWKSCACertFileAppearsLate — the spiffe-helper sidecar writes the
+// trust bundle a few seconds after pod start; the verifier must retry
+// the CA file instead of giving up at construction.
+func TestJWKSCACertFileAppearsLate(t *testing.T) {
+	ts, ecKey := jwksTLSServer(t)
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "bundle.pem")
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		certOut := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ts.Certificate().Raw})
+		if err := os.WriteFile(caPath, certOut, 0o600); err != nil {
+			t.Error(err)
+		}
+	}()
+	t.Setenv("SPIRE_JWKS_CA_FILE", caPath)
+	verifier := NewJWKSVerifier(ts.URL, testSPIREIssuer, testSVIDAud)
+	svid := signES256SVID(t, ecKey, "ec-1", validSVIDClaims(gatewayPrefix+"x"))
+	if _, err := verifier.VerifySVID(svid, gatewayPrefix); err != nil {
+		t.Fatalf("expected SVID verified once the CA file appears, got: %v", err)
+	}
+}
