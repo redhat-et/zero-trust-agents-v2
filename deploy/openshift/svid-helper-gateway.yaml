@@ -19,6 +19,8 @@ metadata:
 spec:
   serviceAccountName: openshell
   restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
   initContainers:
     - name: wait-for-entry
       image: docker.io/busybox:1.36

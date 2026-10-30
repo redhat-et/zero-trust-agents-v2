@@ -18,6 +18,21 @@ per idempotent re-run. A from-empty-cluster run was not cleanly timed
 (the working state was reached iteratively); measure it on the next
 fresh cluster.
 
+**Correction (2026-10-30, PR review):** the `default` fallback
+identity was NOT actually disabled during the run above — its values
+override sat one level too high in
+`deploy/openshift/spire/values.yaml` (next to `clusterSPIFFEIDs`,
+not inside it), so chart 0.29.0 silently ignored it and
+`spire-spire-default` (fallback) still covered `openshell`. The
+zt2-sandboxes refusal recorded above holds either way (it tests the
+wrong-namespace direction, not the fallback), but the openshell-ns
+claim ("an arbitrary openshell-ns pod gets no identity") was untested.
+The override now sits inside `clusterSPIFFEIDs`
+(`helm template … | grep -c 'fallback: true'` returns 0). Re-verify on
+the next cluster: after `helm upgrade`, `oc get clusterspiffeid` must
+not list `spire-spire-default`, and a throwaway pod in `openshell`
+must get no SVID.
+
 ## What was verified
 
 - SPIFFE hardened charts (spire v0.29.0, spire-crds v0.5.0) install

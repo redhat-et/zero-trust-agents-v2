@@ -14,7 +14,9 @@ OpenShift 4.19+). Everything here is what
   live on the remote host).
 - Local podman credentials for quay.io (`~/.config/containers/auth.json`)
   — `setup.sh` builds the in-cluster pull secret from them, so the
-  `quay.io/panni/zt2-*` repositories can stay private.
+  `quay.io/panni/zt2-*` repositories can stay private. If the repos
+  are public instead, run `ZT2_PUBLIC_IMAGES=1 setup.sh` to skip the
+  pull-secret precheck.
 
 ## 1. Build and push the images (only once per code change)
 

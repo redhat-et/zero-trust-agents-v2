@@ -105,8 +105,11 @@ fetch_supervisor_svid() {
 
 # fetch_rogue_svid — register a rogue entry (a validly-signed SVID at a
 # SPIFFE path the issuer's supervisor prefix check rejects) and fetch
-# it. Returns non-zero if SPIRE refuses, which scenario 5 treats as a
-# pass on drivers whose attestation policy would not mint it at all.
+# it. The entry is registered on purpose on this driver, so SPIRE can
+# never "refuse" here: exit codes are 0 (SVID fetched; the issuer must
+# reject it) or 2 (indeterminate — registration or fetch failed,
+# scenario 5 must FAIL). Exit 1 is reserved for drivers whose
+# attestation policy refuses to mint the rogue SVID at all.
 fetch_rogue_svid() {
     local spiffe_id="spiffe://openshell.local/rogue/workload/1"
     TRUST_DOMAIN=openshell.local \
@@ -115,5 +118,7 @@ fetch_rogue_svid() {
     SPIRE_SERVER_CONTAINER=zt2-spire-server \
     SANDBOX_SELECTORS="docker:label:zt2.rogue:true" \
         bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "rogue-workload-1" 2>/dev/null || true
-    fetch_svid "$spiffe_id" "zt2.rogue=true"
+    fetch_svid "$spiffe_id" "zt2.rogue=true" && return 0
+    printf "fetch_rogue_svid: indeterminate (registration or fetch failed)\n" >&2
+    return 2
 }

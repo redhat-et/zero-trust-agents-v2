@@ -56,11 +56,15 @@ ensure_pull_secret() {
         fi
     fi
     if ! oc -n "$ns" get secret zt2-quay >/dev/null 2>&1; then
+        if [[ "${ZT2_PUBLIC_IMAGES:-0}" == 1 ]]; then
+            printf "quay.io pull secret 'zt2-quay' missing in namespace %s — continuing (ZT2_PUBLIC_IMAGES=1).\n" "$ns" >&2
+            return 0
+        fi
         printf "quay.io pull secret 'zt2-quay' missing in namespace %s.\n" "$ns" >&2
         printf "Fix (after podman login quay.io):\n" >&2
         printf "  oc -n %s create secret docker-registry zt2-quay \\\n" "$ns" >&2
         printf "    --from-file=.dockerconfigjson=<(podman login --get-login quay.io >/dev/null; cat \$XDG_CONFIG_HOME/containers/auth.json)\n" >&2
-        printf "or make the quay.io/%s/zt2-* repos public.\n" "$ZT2_QUAY_NS" >&2
+        printf "or make the quay.io/%s/zt2-* repos public, or rerun with ZT2_PUBLIC_IMAGES=1.\n" "$ZT2_QUAY_NS" >&2
         exit 1
     fi
     # Link it to the default service account so every pod in the

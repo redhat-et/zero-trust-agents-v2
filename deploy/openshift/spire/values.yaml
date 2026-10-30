@@ -82,25 +82,25 @@ spire-server:
               app.kubernetes.io/name: openshell
         # The issuer's spiffe-helper sidecar needs an X509-SVID to
         # fetch the trust bundle; with the fallback default identity
-        # excluded from openshell only, it still covers zt-demo — but
-        # be explicit so removing the fallback entirely stays safe.
+        # disabled, it needs this explicit entry.
         zt-demo-workloads:
           enabled: true
           spiffeIDTemplate: 'spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}'
           namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: zt-demo
-      # The chart's fallback identity grants ns/<ns>/sa/<sa> to every
-      # pod with no matching explicit identity — including any pod in
-      # the openshell namespace, which would land under the issuer's
-      # GATEWAY_TRUST_DOMAIN_PREFIX. The values override for its
-      # namespaceSelector is ignored by the chart (it appends its own
-      # computed expressions), so it is disabled outright. Everything
-      # that needs an identity has an explicit one: supervisors
-      # (openshell-sandboxes), the gateway (zt2-gateway), the issuer's
-      # spiffe-helper sidecar (zt-demo-workloads).
-      default:
-        enabled: false
+        # The chart's fallback identity grants ns/<ns>/sa/<sa> to every
+        # pod with no matching explicit identity — including any pod in
+        # the openshell namespace, which would land under the issuer's
+        # GATEWAY_TRUST_DOMAIN_PREFIX. Overriding its namespaceSelector
+        # does not exclude namespaces (the chart appends its own
+        # computed selector expressions to the override), so it is
+        # disabled outright. Everything that needs an identity has an
+        # explicit one: supervisors (openshell-sandboxes), the gateway
+        # (zt2-gateway), the issuer's spiffe-helper sidecar
+        # (zt-demo-workloads).
+        default:
+          enabled: false
 
 # Agents use the Kubernetes PSAT workload attestor and expose the
 # Workload API socket via the SPIFFE CSI driver (both chart defaults);

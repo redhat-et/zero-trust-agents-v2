@@ -38,5 +38,5 @@ echo "  sandbox request denied at the proxy (502)"
 if supervisor_logs "$ID" | grep -q "Token grant failed"; then
     pass "supervisor logged 'Token grant failed' — no credential to exchange, no token minted"
 else
-    fail "no 'Token grant failed' entry in supervisor logs for $SUPERVISOR"
+    fail "no 'Token grant failed' entry in supervisor logs for sandbox $ID"
 fi

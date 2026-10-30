@@ -7,9 +7,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -319,4 +322,66 @@ func TestJWKSCACertFileAppearsLate(t *testing.T) {
 	if _, err := verifier.VerifySVID(svid, gatewayPrefix); err != nil {
 		t.Fatalf("expected SVID verified once the CA file appears, got: %v", err)
 	}
+}
+
+// TestJWKSCABundleRotation — SPIRE rotates its self-signed root CA
+// (~24h TTL) and spiffe-helper rewrites the bundle in place; the
+// verifier must pick up the new CA on the next fetch instead of
+// failing TLS verification until the pod restarts.
+func TestJWKSCABundleRotation(t *testing.T) {
+	// CA-B signs the JWKS endpoint from the start; the bundle initially
+	// holds an unrelated CA-A, then rotates to CA-B. (CA-A must be
+	// freshly generated: httptest caches one certificate per process,
+	// so a second httptest TLS server would share CA-B's cert.)
+	ts, _ := jwksTLSServer(t)
+	staleDER := selfSignedCertDER(t)
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "bundle.pem")
+	writeCAPEM(t, caPath, staleDER)
+	t.Setenv("SPIRE_JWKS_CA_FILE", caPath)
+	v := NewJWKSVerifier(ts.URL, testSPIREIssuer, testSVIDAud).(*jwksVerifier)
+	if _, err := v.fetch(); err == nil {
+		t.Fatal("expected fetch to fail TLS verification against the stale CA")
+	}
+	writeCAPEM(t, caPath, ts.Certificate().Raw)
+	// Force the mtime forward: same-second rewrites would otherwise be
+	// invisible to the mtime-based reload on coarse-grained filesystems.
+	future := time.Now().Add(time.Second)
+	if err := os.Chtimes(caPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.fetch(); err != nil {
+		t.Fatalf("expected fetch to succeed after CA rotation, got: %v", err)
+	}
+}
+
+func writeCAPEM(t *testing.T, path string, der []byte) {
+	t.Helper()
+	certOut := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(path, certOut, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// selfSignedCertDER mints an unrelated self-signed certificate (CA-A
+// in the rotation test).
+func selfSignedCertDER(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "stale-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der
 }

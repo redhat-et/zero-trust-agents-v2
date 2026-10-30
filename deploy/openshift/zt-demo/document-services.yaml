@@ -24,6 +24,8 @@ spec:
       labels:
         app: document-engineering
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
@@ -86,6 +88,8 @@ spec:
       labels:
         app: document-finance
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
@@ -148,6 +152,8 @@ spec:
       labels:
         app: document-admin
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
@@ -210,6 +216,8 @@ spec:
       labels:
         app: document-hr
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
@@ -272,6 +280,8 @@ spec:
       labels:
         app: document-public
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2

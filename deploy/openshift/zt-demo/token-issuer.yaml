@@ -30,6 +30,8 @@ spec:
       labels:
         app: token-issuer
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: token-issuer
           image: quay.io/panni/zt2-token-issuer:v2
