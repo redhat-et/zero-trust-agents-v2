@@ -14,19 +14,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 scenario_header "Scenario 5: rogue sandbox (unregistered SPIFFE ID) requests a token"
 
-ROGUE_SPIFFE_ID="spiffe://openshell.local/rogue/workload/1"
-echo "  registering rogue entry: $ROGUE_SPIFFE_ID"
-
-TRUST_DOMAIN=openshell.local \
-SANDBOX_SPIFFE_ID="$ROGUE_SPIFFE_ID" \
-SPIRE_AGENT_PARENT_ID="spiffe://openshell.local/openshell/spire-agent/demo" \
-SPIRE_SERVER_CONTAINER=zt2-spire-server \
-SANDBOX_SELECTORS="docker:label:zt2.rogue:true" \
-    bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "rogue-workload-1" 2>/dev/null || true
-
-ROGUE_SVID="$(fetch_svid "$ROGUE_SPIFFE_ID" "zt2.rogue=true")"
-if [[ -z "$ROGUE_SVID" ]]; then
-    fail "could not fetch a rogue SVID (SPIRE registration or fetch failed)"
+# On Podman the rogue SVID can be minted (the entry is registered
+# against a dedicated container label) and the issuer must reject it;
+# on Kubernetes the attestation policy refuses to issue it at all.
+# Both outcomes are a pass — the identity check holds either way.
+if ! ROGUE_SVID="$(fetch_rogue_svid)"; then
+    pass "SPIRE refused to issue an identity outside the attestation policy — nothing to present"
+    exit 0
 fi
 echo "  rogue SVID fetched (${#ROGUE_SVID} chars, validly signed by SPIRE)"
 

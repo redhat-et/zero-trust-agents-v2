@@ -34,8 +34,8 @@ pass "request denied at the proxy — no token minted with an engineering scope 
 # (alice's subject token -> intermediate -> final with hr scope) and
 # observe the intersection deny directly.
 echo "  issuer-side proof (final exchange: alice + hr scope + engineering audience):"
-GW_SVID="$(fetch_svid "spiffe://openshell.local/openshell/gateway/demo" "openshell.spiffe-demo=gateway")"
-SUP_SVID="$(fetch_svid "spiffe://openshell.local/openshell/sandbox/$ID" "openshell.ai/sandbox-id=$ID" "openshell.managed=true")"
+GW_SVID="$(fetch_gateway_svid)"
+SUP_SVID="$(fetch_supervisor_svid "$ID")"
 INTERMEDIATE="$(curl -fsS -X POST "$ISSUER_LOCAL/token" \
     -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
     -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \

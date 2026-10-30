@@ -20,10 +20,12 @@ OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 source "$ROOT/deploy/podman/spire/common.sh"
 ENGINEERING_URL="http://$(doc_endpoint_host engineering):$(doc_endpoint_port engineering)"
 HR_URL="http://$(doc_endpoint_host hr):$(doc_endpoint_port hr)"
-# Host-side URLs: Podman publishes the same host:port to the laptop and
-# to sandbox containers, so in-sandbox and laptop views coincide.
-ENGINEERING_LOCAL="$ENGINEERING_URL"
-FINANCE_LOCAL="http://$(doc_endpoint_host finance):$(doc_endpoint_port finance)"
+# Host-side URLs: the services are published on loopback only
+# (start-services.sh), and the nip.io host that in-sandbox containers
+# use is not reachable from the laptop on macOS (it lives inside the
+# Podman VM).
+ENGINEERING_LOCAL="http://127.0.0.1:$(doc_endpoint_port engineering)"
+FINANCE_LOCAL="http://127.0.0.1:$(doc_endpoint_port finance)"
 ISSUER_LOCAL="http://127.0.0.1:8080"
 # The unauthenticated subject-token minter is served on the issuer's
 # loopback-only listener (see start-services.sh).

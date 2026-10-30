@@ -17,7 +17,7 @@ echo "  sandbox: $ID (SPIFFE ID registered, no user delegation)"
 
 # Sanity first: the document service itself must be healthy, so a deny
 # can only come from the missing delegation.
-HEALTH="$(curl -s --max-time 5 http://127.0.0.1:18101/healthz || true)"
+HEALTH="$(curl -s --max-time 5 "$ENGINEERING_LOCAL/healthz" || true)"
 if [[ "$HEALTH" != "ok" ]]; then
     fail "document service unhealthy — cannot attribute a deny to the missing delegation"
 fi
@@ -35,9 +35,7 @@ if [[ "$RESP" != "502" ]]; then
 fi
 echo "  sandbox request denied at the proxy (502)"
 
-SUPERVISOR="$(podman ps -a --filter "label=openshell.ai/sandbox-id=$ID" \
-    --format '{{.Names}}' | grep supervisor)"
-if podman logs "$SUPERVISOR" 2>&1 | grep -q "Token grant failed"; then
+if supervisor_logs "$ID" | grep -q "Token grant failed"; then
     pass "supervisor logged 'Token grant failed' — no credential to exchange, no token minted"
 else
     fail "no 'Token grant failed' entry in supervisor logs for $SUPERVISOR"
