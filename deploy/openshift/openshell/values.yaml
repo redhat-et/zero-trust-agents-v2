@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Red Hat, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenShell chart values for the Stage 2 OpenShift deployment.
+# Chart: oci://ghcr.io/nvidia/openshell/helm-chart (v0.1.6).
+#
+# Prerequisite (run first; the chart's preflight checks for it):
+#   oc apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml
+#   # creates agent-sandbox-system, the sandboxes.agents.x-k8s.io CRD,
+#   # and the Agent Sandbox controller.
+#
+# OpenShift SCC compatibility mirrors the chart's own
+# ci/values-openshift-scc.yaml: no hardcoded UIDs, the restricted-v2
+# SCC assigns the namespace ranges.
+
+gatewayConfig:
+  openshell:
+    version: 2
+  # Mount the SPIFFE Workload API socket (SPIFFE CSI driver, from the
+  # SPIRE release) into gateway and sandbox supervisor pods so provider
+  # token grants can use gateway- and sandbox-scoped JWT-SVIDs.
+  providerTokenGrants:
+    spiffe:
+      enabled: true
+      workloadApiSocketPath: /spiffe-workload-api/spire-agent.sock
+
+server:
+  # Sandboxes live in their own namespace: the gateway's
+  # ClusterSPIFFEID is scoped to the openshell namespace, and the
+  # issuer's gateway check is a prefix match — co-locating sandboxes
+  # there would hand every sandbox pod a gateway-prefix SVID. See the
+  # Stage 2 design doc.
+  sandboxNamespace: zt2-sandboxes
+  logLevel: info
+  telemetryEnabled: false
+
+# OpenShift Route with TLS passthrough: the gateway terminates its own
+# TLS, the router forwards on SNI. setup.sh fills in the host (a name
+# under the cluster's apps domain, via
+# `oc get ingresscontroller default -n openshift-ingress-operator`)
+# and appends it to pkiInitJob.serverDnsNames so the gateway cert's SAN
+# matches -- both passed with --set at install time.
+openshiftRoute:
+  enabled: true
+  host: ""
+
+pkiInitJob:
+  serverDnsNames: []
+
+# SCC compatibility (from the chart's ci/values-openshift-scc.yaml).
+podSecurityContext: null
+securityContext:
+  runAsNonRoot: true
+  runAsUser: null
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+supervisor:
+  podSecurityContext:
+    runAsUser: null
+    runAsGroup: null
+    fsGroup: null
