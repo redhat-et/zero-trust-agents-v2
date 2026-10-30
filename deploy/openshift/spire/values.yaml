@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Red Hat, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPIRE hardened chart values for the Stage 2 OpenShift deployment.
+# Chart: spiffe/spire v0.29.0 (installed after spiffe/spire-crds v0.5.0).
+# Based on NVIDIA/OpenShell deploy/helm/openshell/ci/values-spire-stack.yaml.
+#
+# OpenShift: no fsGroup/runAsUser are set — SCC admission assigns the
+# namespace's UID range. The chart is expected to run under the
+# restricted SCC; any exception found on-cluster is recorded in
+# docs/dev/openshift-stage2-findings.md.
+global:
+  spire:
+    clusterName: zt2-rosa
+    trustDomain: openshell.local
+    jwtIssuer: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local
+
+spire-server:
+  # Demo: single replica. The JWT-SVID TTL matches the upstream
+  # reference (token grants mint fresh SVIDs per exchange).
+  replicaCount: 1
+  defaultJwtSvidTTL: 5m
+  controllerManager:
+    identities:
+      clusterSPIFFEIDs:
+        # Sandbox identity: one unique SVID per sandbox pod, keyed on
+        # the openshell.ai/sandbox-id annotation the OpenShell
+        # Kubernetes driver sets. Scoped to the zt2-sandboxes
+        # namespace ONLY — never widen this to a namespace that also
+        # hosts the gateway (see the trust-tier rationale in the
+        # Stage 2 design doc).
+        openshell-sandboxes:
+          enabled: true
+          spiffeIDTemplate: 'spiffe://{{ .TrustDomain }}/openshell/sandbox/{{ index .PodMeta.Annotations "openshell.ai/sandbox-id" }}'
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: zt2-sandboxes
+          podSelector:
+            matchLabels:
+              openshell.ai/managed-by: openshell
+        # Gateway identity: ServiceAccount-based, scoped to the
+        # gateway's own pods only (chart labels: app.kubernetes.io/name
+        # openshell, SA openshell in namespace openshell). The
+        # namespaceSelector alone would also match the Agent Sandbox
+        # controller and anything else deployed there — every one of
+        # them under the issuer's gateway prefix. The token issuer's
+        # GATEWAY_TRUST_DOMAIN_PREFIX validates this prefix; the
+        # podSelector is what makes it mean "the gateway".
+        zt2-gateway:
+          enabled: true
+          spiffeIDTemplate: 'spiffe://{{ .TrustDomain }}/ns/{{ .Namespace }}/sa/{{ .ServiceAccount }}'
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshell
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openshell
+
+# Agents use the Kubernetes PSAT workload attestor and expose the
+# Workload API socket via the SPIFFE CSI driver (both chart defaults);
+# the OIDC discovery provider publishes JWKS in-cluster for the token
+# issuer (SPIRE_ISSUER / SPIRE_JWKS_URI).
