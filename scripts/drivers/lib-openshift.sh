@@ -6,6 +6,11 @@
 # subject-token minter port.
 set -euo pipefail
 
+# kill_pidfile (PID-reuse-safe port-forward cleanup) lives here.
+# ROOT and STATE_DIR are already set by scripts/lib.sh.
+# shellcheck source=../../deploy/openshift/lib.sh
+source "$ROOT/deploy/openshift/lib.sh"
+
 # shellcheck source=/dev/null
 [[ -f "$STATE_DIR/openshift.env" ]] && source "$STATE_DIR/openshift.env"
 : "${ZT2_GATEWAY_ROUTE:?ZT2_GATEWAY_ROUTE not set (run deploy/openshift/setup.sh)}"
@@ -41,8 +46,7 @@ ensure_forward() {
         return 0
     fi
     if [[ -f "$pidfile" ]]; then
-        kill "$(cat "$pidfile")" 2>/dev/null || true
-        rm -f "$pidfile"
+        kill_pidfile "$pidfile"
     fi
     oc -n zt-demo port-forward "$resource" "${port}:8080" >/dev/null 2>&1 &
     echo $! >"$pidfile"
@@ -191,7 +195,7 @@ ensure_forward "$FINANCE_LOCAL_PORT" service/document-finance
 # listener is gone.
 DEMO_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
 if ! curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1; then
-    kill "$(cat "$STATE_DIR/openshift-forward.pid" 2>/dev/null)" 2>/dev/null || true
+    kill_pidfile "$STATE_DIR/openshift-forward.pid"
     oc -n zt-demo port-forward deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
     echo $! >"$STATE_DIR/openshift-forward.pid"
     for _ in $(seq 1 15); do

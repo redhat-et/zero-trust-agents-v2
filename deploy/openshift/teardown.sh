@@ -18,15 +18,11 @@ ALL=0
 AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.9}"
 
 echo "== port-forwards =="
-if [[ -f "$STATE_DIR/openshift-forward.pid" ]]; then
-    kill "$(cat "$STATE_DIR/openshift-forward.pid")" 2>/dev/null || true
-    rm -f "$STATE_DIR/openshift-forward.pid"
-fi
+[[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
 # Forwards started by the scenario-harness driver (lib-openshift.sh).
 for pidfile in "$STATE_DIR"/forward-*.pid; do
     [[ -f "$pidfile" ]] || continue
-    kill "$(cat "$pidfile")" 2>/dev/null || true
-    rm -f "$pidfile"
+    kill_pidfile "$pidfile"
 done
 
 echo "== sandboxes, providers, profiles =="

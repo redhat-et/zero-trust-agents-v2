@@ -170,10 +170,7 @@ echo "== 5/7 subject-token minter port-forward =="
 # The unauthenticated /demo-subject-token listener is reached ONLY via
 # port-forward to the pod -- never a Route or Service.
 DEMO_PORT="${ZT2_DEMO_LOCAL_PORT:-18090}"
-if [[ -f "$STATE_DIR/openshift-forward.pid" ]] &&
-    kill -0 "$(cat "$STATE_DIR/openshift-forward.pid")" 2>/dev/null; then
-    kill "$(cat "$STATE_DIR/openshift-forward.pid")" 2>/dev/null || true
-fi
+[[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
 oc -n zt-demo port-forward deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
 FORWARD_PID=$!
 echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"

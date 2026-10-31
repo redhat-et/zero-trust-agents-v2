@@ -61,3 +61,17 @@ substitute_profile() {
         { gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port); print }
     ' "$1"
 }
+
+# kill_pidfile PIDFILE — kill the process recorded in a pidfile, but
+# only after confirming it is still one of our port-forwards: a stale
+# PID can be reused by an unrelated process, and signaling it blind
+# would terminate that process. The pidfile is removed either way.
+kill_pidfile() {
+    local pid
+    pid="$(cat "$1" 2>/dev/null)" || return 0
+    [[ -n "$pid" ]] || return 0
+    if ps -p "$pid" -o command= 2>/dev/null | grep -q "port-forward"; then
+        kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$1"
+}
