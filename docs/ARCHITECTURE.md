@@ -144,6 +144,43 @@ Provider profiles are templates (`deploy/podman/profiles/*.yaml.in`)
 rendered per host OS into the state dir at setup time; the same
 services, SPIRE wiring, and scenario scripts run unchanged.
 
+## OpenShift deployment (Stage 2)
+
+The same architecture runs on ROSA/OpenShift 4.19+ via
+`deploy/openshift/` — the production-representative reference. The
+scenario harness selects the backend with `ZT2_DRIVER=podman|openshift`
+(`scripts/drivers/`), so the six scenarios are unchanged.
+
+| Concern | Podman (Stage 1) | OpenShift (Stage 2) |
+|---|---|---|
+| SPIRE | server/agent/OIDC containers, manual registration entries | SPIFFE hardened charts, `ClusterSPIFFEID` workload attestation |
+| Sandbox identity | label-selected SPIRE entries | one SVID per sandbox pod (`openshell.ai/sandbox-id` annotation) |
+| Gateway identity | label-selected entry | SA-based SVID, pod-selector-tightened |
+| Gateway | Podman container, loopback | OpenShell Helm chart behind an OpenShift Route (TLS passthrough) |
+| Sandboxes | containers on a podman network | supervisor + workload pods in `zt2-sandboxes`, NetworkPolicy-brokered egress |
+| Egress enforcement | gateway proxy + OPA | same, plus enforced NetworkPolicy (OVN-Kubernetes) |
+
+Namespaces are one trust tier each — this is load-bearing, not style:
+the issuer's gateway check is a prefix match on
+`spiffe://…/ns/openshell/sa/`, so the gateway's `ClusterSPIFFEID` is
+pod-selector-tightened, the chart's fallback identity is excluded
+from the `openshell` namespace, and sandboxes live in their own
+`zt2-sandboxes` namespace. A sandbox pod must never be able to obtain
+an SVID under the gateway prefix; the deployment is verified against
+exactly that (see the design doc and
+`docs/dev/openshift-stage2-findings.md`).
+
+The token issuer verifies SPIRE's JWKS over TLS against the SPIFFE
+trust bundle (a `spiffe-helper` sidecar writes it from the
+CSI-mounted Workload API socket). The unauthenticated
+`/demo-subject-token` listener is reachable only via
+`oc port-forward` — never a Route or Service.
+
+Human identity is a deliberate non-component: the subject token is an
+OAuth2 access token presented at the RFC 8693 exchange, so any
+customer IdP plugs in at that boundary — see
+[production recommendations](PRODUCTION_RECOMMENDATIONS.md).
+
 ## Attribution
 
 - SPIRE configs and registration scripts adapted from

@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Red Hat, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPIRE hardened chart values for the Stage 2 OpenShift deployment.
+# Chart: spiffe/spire v0.29.0 (installed after spiffe/spire-crds v0.5.0).
+# Based on NVIDIA/OpenShell deploy/helm/openshell/ci/values-spire-stack.yaml.
+#
+# OpenShift: no fsGroup/runAsUser are set — SCC admission assigns the
+# namespace's UID range. The chart is expected to run under the
+# restricted SCC; any exception found on-cluster is recorded in
+# docs/dev/openshift-stage2-findings.md.
+global:
+  openshift: true
+  spire:
+    # recommendations enabled: apply the chart's recommended namespace
+    # pod-security labels (with global.openshift + the OIDC provider,
+    # the server namespace gets enforce=privileged for the CSI socket).
+    recommendations:
+      enabled: true
+    clusterName: zt2-rosa
+    trustDomain: openshell.local
+    jwtIssuer: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local
+    namespaces:
+      # setup.sh pre-creates the namespaces with the OpenShift
+      # pod-security labels the CSI driver and OIDC provider need
+      # (enforce=privileged, SCC label sync off): the chart must not
+      # own them, so Helm adoption never gets in the way.
+      create: false
+      server:
+        name: spire
+      system:
+        name: spire-system
+
+spire-server:
+  # Demo-only CA subject (required by the chart in recommended mode).
+  caSubject:
+    country: US
+    organization: Zero Trust Agents v2
+    commonName: zt2 demo CA
+  # Demo: single replica. The JWT-SVID TTL matches the upstream
+  # reference (token grants mint fresh SVIDs per exchange).
+  replicaCount: 1
+  defaultJwtSvidTTL: 5m
+  controllerManager:
+    identities:
+      clusterSPIFFEIDs:
+        # Sandbox identity: one unique SVID per sandbox pod, keyed on
+        # the openshell.ai/sandbox-id annotation the OpenShell
+        # Kubernetes driver sets. Scoped to the zt2-sandboxes
+        # namespace ONLY — never widen this to a namespace that also
+        # hosts the gateway (see the trust-tier rationale in the
+        # Stage 2 design doc).
+        openshell-sandboxes:
+          enabled: true
+          spiffeIDTemplate: 'spiffe://{{ .TrustDomain }}/openshell/sandbox/{{ index .PodMeta.Annotations "openshell.ai/sandbox-id" }}'
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: zt2-sandboxes
+          podSelector:
+            matchLabels:
+              openshell.ai/managed-by: openshell
+        # Gateway identity: ServiceAccount-based, scoped to the
+        # gateway's own pods (chart labels: app.kubernetes.io/name
+        # openshell, SA openshell in namespace openshell). The token
+        # issuer's GATEWAY_TRUST_DOMAIN_PREFIX validates this prefix.
+        # NOTE the podSelector alone does NOT close the prefix: the
+        # chart's fallback `default` identity would still grant
+        # ns/openshell/sa/<sa> to any other pod in the namespace —
+        # which is why `default` below excludes openshell entirely.
+        # The trust boundary is namespace membership: whoever can
+        # create pods in `openshell` (or use its service accounts)
+        # can obtain a gateway-prefix SVID — cluster-admin territory,
+        # nothing a sandbox holds.
+        zt2-gateway:
+          enabled: true
+          spiffeIDTemplate: 'spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}'
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshell
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openshell
+        # The issuer's spiffe-helper sidecar needs an X509-SVID to
+        # fetch the trust bundle; with the fallback default identity
+        # disabled, it needs this explicit entry.
+        zt-demo-workloads:
+          enabled: true
+          spiffeIDTemplate: 'spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}'
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: zt-demo
+        # The chart's fallback identity grants ns/<ns>/sa/<sa> to every
+        # pod with no matching explicit identity — including any pod in
+        # the openshell namespace, which would land under the issuer's
+        # GATEWAY_TRUST_DOMAIN_PREFIX. Overriding its namespaceSelector
+        # does not exclude namespaces (the chart appends its own
+        # computed selector expressions to the override), so it is
+        # disabled outright. Everything that needs an identity has an
+        # explicit one: supervisors (openshell-sandboxes), the gateway
+        # (zt2-gateway), the issuer's spiffe-helper sidecar
+        # (zt-demo-workloads).
+        default:
+          enabled: false
+
+# Agents use the Kubernetes PSAT workload attestor and expose the
+# Workload API socket via the SPIFFE CSI driver (both chart defaults);
+# the OIDC discovery provider publishes JWKS in-cluster for the token
+# issuer (SPIRE_ISSUER / SPIRE_JWKS_URI).

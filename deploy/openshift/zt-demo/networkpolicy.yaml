@@ -1,0 +1,39 @@
+# zt-demo ingress: default-deny, allow the sandbox namespace (supervisor
+# pods broker every sandbox request) and the gateway (its token-grant
+# path exchanges the subject token at the issuer from the openshell
+# namespace). Production recommendations narrow these from
+# namespace-wide to the specific pods (see
+# docs/PRODUCTION_RECOMMENDATIONS.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: zt-demo
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sandbox-supervisors
+  namespace: zt-demo
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Port 8080 only: the unauthenticated :8090 subject-token minter
+    # must not be reachable at the pod IP from other namespaces (it is
+    # exposed solely via oc port-forward, which bypasses NetworkPolicy).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: zt2-sandboxes
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshell
+      ports:
+        - port: 8080
+          protocol: TCP

@@ -6,11 +6,15 @@ import (
 	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -43,22 +47,108 @@ type jwksVerifier struct {
 	cached   *jwksDoc
 	fetched  time.Time
 	client   *http.Client
+
+	// caPath is the trust bundle backing the client's RootCAs. SPIRE
+	// rotates its self-signed root CA (~24h TTL) and spiffe-helper
+	// rewrites the bundle in place, so the pool is re-read whenever
+	// the file's mtime moves (otherwise TLS to the JWKS endpoint fails
+	// verification after the first rotation until the pod restarts).
+	caPath    string
+	caModTime time.Time
 }
 
 // NewJWKSVerifier returns a JWKSVerifier that fetches keys from uri
-// (cached for 60s) and verifies SPIRE-issued JWT-SVIDs.
+// (cached for 60s) and verifies SPIRE-issued JWT-SVIDs. When the
+// SPIRE_JWKS_CA_FILE environment variable is set, the JWKS endpoint's
+// TLS certificate is verified against that CA file (the SPIFFE trust
+// bundle, written by spiffe-helper in the OpenShift deployment). The
+// sidecar writes the bundle a few seconds after pod start, so the
+// read is retried for up to 30s before giving up. The bundle is
+// re-read whenever its mtime changes (SPIRE CA rotation).
 func NewJWKSVerifier(uri, spireIssuer, svidAudience string) JWKSVerifier {
+	client := &http.Client{Timeout: 10 * time.Second}
+	caPath := os.Getenv("SPIRE_JWKS_CA_FILE")
+	var caModTime time.Time
+	if caPath != "" {
+		pool := x509.NewCertPool()
+		if !waitForCABundle(caPath, pool, 30*time.Second) {
+			log.Fatalf("jwks: no certificates readable from SPIRE_JWKS_CA_FILE %s after 30s", caPath)
+		}
+		mt, err := caBundleModTime(caPath)
+		if err != nil {
+			log.Fatalf("jwks: stat SPIRE_JWKS_CA_FILE %s: %v", caPath, err)
+		}
+		caModTime = mt
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+		client.Transport = transport
+	}
 	return &jwksVerifier{
 		uri:         uri,
 		spireIssuer: spireIssuer,
 		svidAud:     svidAudience,
-		client:      &http.Client{Timeout: 10 * time.Second},
+		client:      client,
+		caPath:      caPath,
+		caModTime:   caModTime,
+	}
+}
+
+func caBundleModTime(path string) (time.Time, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
+}
+
+// reloadCABundle re-reads the trust bundle when its mtime has moved,
+// replacing the client's transport entirely: mutating RootCAs on a
+// live transport does not re-verify keep-alive connections already
+// authenticated under a removed CA, so the old transport (and its
+// idle connections) is closed. Called with v.mu held.
+func (v *jwksVerifier) reloadCABundle() {
+	if v.caPath == "" {
+		return
+	}
+	mt, err := caBundleModTime(v.caPath)
+	if err != nil || !mt.After(v.caModTime) {
+		return
+	}
+	pool := x509.NewCertPool()
+	pemBytes, err := os.ReadFile(v.caPath)
+	if err != nil || !pool.AppendCertsFromPEM(pemBytes) {
+		return
+	}
+	v.caModTime = mt
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+	old := v.client.Transport
+	v.client.Transport = transport
+	if old, ok := old.(interface{ CloseIdleConnections() }); ok {
+		old.CloseIdleConnections()
+	}
+}
+
+// waitForCABundle reads pemBytes from path into pool, retrying until
+// the deadline (the spiffe-helper sidecar may not have written it yet).
+func waitForCABundle(path string, pool *x509.CertPool, deadline time.Duration) bool {
+	deadlineAt := time.Now().Add(deadline)
+	for {
+		pemBytes, err := os.ReadFile(path)
+		if err == nil && pool.AppendCertsFromPEM(pemBytes) {
+			return true
+		}
+		if time.Now().After(deadlineAt) {
+			return false
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
 func (v *jwksVerifier) fetch() (*jwksDoc, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.reloadCABundle()
 	if v.cached != nil && time.Since(v.fetched) < jwksCacheTTL {
 		return v.cached, nil
 	}

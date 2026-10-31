@@ -21,11 +21,11 @@ if [[ -z "$ID" ]]; then
     ID="$(create_sandbox alice-s1 "alice-eng-s6-$$")"
     register_sandbox "$ID" >/dev/null
 fi
-SANDBOX_SPIFFE_ID="spiffe://openshell.local/openshell/sandbox/$ID"
+SANDBOX_SPIFFE_ID="$(sandbox_spiffe_id "$ID")"
 echo "  supervisor SVID: $SANDBOX_SPIFFE_ID"
 
-GW_SVID="$(fetch_svid "spiffe://openshell.local/openshell/gateway/demo" "openshell.spiffe-demo=gateway")"
-SUP_SVID="$(fetch_svid "$SANDBOX_SPIFFE_ID" "openshell.ai/sandbox-id=$ID" "openshell.managed=true")"
+GW_SVID="$(fetch_gateway_svid)"
+SUP_SVID="$(fetch_supervisor_svid "$ID")"
 if [[ -z "$GW_SVID" || -z "$SUP_SVID" ]]; then
     fail "could not fetch gateway/supervisor SVIDs"
 fi
@@ -55,7 +55,7 @@ echo "  final token minted (audience=engineering, scope=engineering)"
 # Sanity: the token works against the engineering service.
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
     -H "Authorization: Bearer $FINAL" \
-    "http://127.0.0.1:18101/documents/DOC-001")"
+    "$ENGINEERING_LOCAL/documents/DOC-001")"
 if [[ "$STATUS" != "200" ]]; then
     fail "sanity check failed: engineering token got $STATUS from engineering service"
 fi
@@ -67,8 +67,8 @@ echo "  sanity: token works against engineering service (200)"
 # deny, making this assertion specifically about audience binding.
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
     -H "Authorization: Bearer $FINAL" \
-    "http://127.0.0.1:18102/documents/DOC-005")"
-BODY="$(curl -s -H "Authorization: Bearer $FINAL" "http://127.0.0.1:18102/documents/DOC-005")"
+    "$FINANCE_LOCAL/documents/DOC-005")"
+BODY="$(curl -s -H "Authorization: Bearer $FINAL" "$FINANCE_LOCAL/documents/DOC-005")"
 
 if [[ "$STATUS" == "403" && "$BODY" == *"invalid_audience"* ]]; then
     pass "finance service rejected the engineering-audience token with 403 invalid_audience"

@@ -7,10 +7,16 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -124,7 +130,7 @@ func TestVerifySVIDAcceptsRS256(t *testing.T) {
 	ts, _, rsaKey := jwksServer(t)
 	v := newVerifier(t, ts.URL)
 	header, _ := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": "rsa-1"})
-	payload, _ := json.Marshal(validSVIDClaims(gatewayPrefix+"demo"))
+	payload, _ := json.Marshal(validSVIDClaims(gatewayPrefix + "demo"))
 	signingInput := base64.RawURLEncoding.EncodeToString(header) + "." +
 		base64.RawURLEncoding.EncodeToString(payload)
 	sig, err := rsaSignPKCS1v15(rsaKey, sha256Sum(signingInput))
@@ -151,7 +157,7 @@ func TestVerifySVIDRejectsWrongPrefix(t *testing.T) {
 func TestVerifySVIDRejectsWrongIssuer(t *testing.T) {
 	ts, ecKey, _ := jwksServer(t)
 	v := newVerifier(t, ts.URL)
-	c := validSVIDClaims(gatewayPrefix+"demo")
+	c := validSVIDClaims(gatewayPrefix + "demo")
 	c["iss"] = "http://attacker"
 	if _, err := v.VerifySVID(signES256SVID(t, ecKey, "ec-1", c), gatewayPrefix); err == nil {
 		t.Fatal("want error for wrong issuer")
@@ -161,7 +167,7 @@ func TestVerifySVIDRejectsWrongIssuer(t *testing.T) {
 func TestVerifySVIDRejectsExpired(t *testing.T) {
 	ts, ecKey, _ := jwksServer(t)
 	v := newVerifier(t, ts.URL)
-	c := validSVIDClaims(gatewayPrefix+"demo")
+	c := validSVIDClaims(gatewayPrefix + "demo")
 	c["exp"] = time.Now().Add(-time.Minute).Unix()
 	if _, err := v.VerifySVID(signES256SVID(t, ecKey, "ec-1", c), gatewayPrefix); err == nil {
 		t.Fatal("want error for expired SVID")
@@ -181,7 +187,7 @@ func TestVerifySVIDRejectsMissingExp(t *testing.T) {
 func TestVerifySVIDRejectsWrongAudience(t *testing.T) {
 	ts, ecKey, _ := jwksServer(t)
 	v := newVerifier(t, ts.URL)
-	c := validSVIDClaims(gatewayPrefix+"demo")
+	c := validSVIDClaims(gatewayPrefix + "demo")
 	c["aud"] = "http://someone-else"
 	if _, err := v.VerifySVID(signES256SVID(t, ecKey, "ec-1", c), gatewayPrefix); err == nil {
 		t.Fatal("want error for wrong audience")
@@ -230,4 +236,166 @@ func sha256Sum(input string) []byte {
 
 func rsaSignPKCS1v15(key *rsa.PrivateKey, digest []byte) ([]byte, error) {
 	return rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest)
+}
+
+// TestJWKSCACertFile — SPIRE_JWKS_CA_FILE makes the verifier trust a
+// TLS JWKS endpoint whose cert is signed by the given CA (the SPIFFE
+// trust bundle in the OpenShift deployment; the hardened chart's OIDC
+// discovery provider serves TLS by default).
+func TestJWKSCACertFile(t *testing.T) {
+	ts, ecKey := jwksTLSServer(t)
+	t.Setenv("SPIRE_JWKS_CA_FILE", caFile(t, ts))
+	verifier := NewJWKSVerifier(ts.URL, testSPIREIssuer, testSVIDAud)
+	svid := signES256SVID(t, ecKey, "ec-1", validSVIDClaims(gatewayPrefix+"x"))
+	if _, err := verifier.VerifySVID(svid, gatewayPrefix); err != nil {
+		t.Fatalf("expected SVID verified over TLS with CA file, got: %v", err)
+	}
+}
+
+// Without the CA file the same endpoint must fail: the fetch is the
+// issuer's root of trust and must not silently accept unknown CAs.
+func TestJWKSCACertFileRequired(t *testing.T) {
+	ts, ecKey := jwksTLSServer(t)
+	verifier := NewJWKSVerifier(ts.URL, testSPIREIssuer, testSVIDAud)
+	svid := signES256SVID(t, ecKey, "ec-1", validSVIDClaims(gatewayPrefix+"x"))
+	if _, err := verifier.VerifySVID(svid, gatewayPrefix); err == nil {
+		t.Fatal("expected TLS verification failure without SPIRE_JWKS_CA_FILE")
+	}
+}
+
+// jwksTLSServer serves a single-key ES256 JWKS over TLS with a
+// self-signed certificate; returns the server and signing key.
+func jwksTLSServer(t *testing.T) (*httptest.Server, *ecdsa.PrivateKey) {
+	t.Helper()
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b64 := base64.RawURLEncoding
+	point, err := ecKey.PublicKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, y := point[1:33], point[33:65]
+	keys := map[string]any{
+		"keys": []jwksKey{{
+			Kty: "EC", Crv: "P-256", Kid: "ec-1",
+			X: b64.EncodeToString(x),
+			Y: b64.EncodeToString(y),
+		}},
+	}
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(keys)
+	}))
+	t.Cleanup(ts.Close)
+	return ts, ecKey
+}
+
+// caFile writes the TLS server's certificate to a PEM file.
+func caFile(t *testing.T, ts *httptest.Server) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	certOut := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ts.Certificate().Raw})
+	if err := os.WriteFile(path, certOut, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestJWKSCACertFileAppearsLate — the spiffe-helper sidecar writes the
+// trust bundle a few seconds after pod start; the verifier must retry
+// the CA file instead of giving up at construction.
+func TestJWKSCACertFileAppearsLate(t *testing.T) {
+	ts, ecKey := jwksTLSServer(t)
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "bundle.pem")
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		certOut := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ts.Certificate().Raw})
+		if err := os.WriteFile(caPath, certOut, 0o600); err != nil {
+			t.Error(err)
+		}
+	}()
+	t.Setenv("SPIRE_JWKS_CA_FILE", caPath)
+	verifier := NewJWKSVerifier(ts.URL, testSPIREIssuer, testSVIDAud)
+	svid := signES256SVID(t, ecKey, "ec-1", validSVIDClaims(gatewayPrefix+"x"))
+	if _, err := verifier.VerifySVID(svid, gatewayPrefix); err != nil {
+		t.Fatalf("expected SVID verified once the CA file appears, got: %v", err)
+	}
+}
+
+// TestJWKSCABundleRotation — SPIRE rotates its self-signed root CA
+// (~24h TTL) and spiffe-helper rewrites the bundle in place; the
+// verifier must pick up the new CA on the next fetch instead of
+// failing TLS verification until the pod restarts.
+func TestJWKSCABundleRotation(t *testing.T) {
+	// CA-B signs the JWKS endpoint from the start; the bundle initially
+	// holds an unrelated CA-A, then rotates to CA-B. (CA-A must be
+	// freshly generated: httptest caches one certificate per process,
+	// so a second httptest TLS server would share CA-B's cert.)
+	ts, _ := jwksTLSServer(t)
+	staleDER := selfSignedCertDER(t)
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "bundle.pem")
+	writeCAPEM(t, caPath, staleDER)
+	t.Setenv("SPIRE_JWKS_CA_FILE", caPath)
+	v := NewJWKSVerifier(ts.URL, testSPIREIssuer, testSVIDAud).(*jwksVerifier)
+	if _, err := v.fetch(); err == nil {
+		t.Fatal("expected fetch to fail TLS verification against the stale CA")
+	}
+	writeCAPEM(t, caPath, ts.Certificate().Raw)
+	// Force the mtime forward: same-second rewrites would otherwise be
+	// invisible to the mtime-based reload on coarse-grained filesystems.
+	future := time.Now().Add(time.Second)
+	if err := os.Chtimes(caPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.fetch(); err != nil {
+		t.Fatalf("expected fetch to succeed after CA rotation, got: %v", err)
+	}
+	// The successful fetch left a keep-alive connection authenticated
+	// under CA-B. Rotating the bundle to an unrelated CA-C must tear it
+	// down: reusing it would keep a connection trusted under a removed
+	// CA alive.
+	future = future.Add(time.Second)
+	writeCAPEM(t, caPath, selfSignedCertDER(t))
+	if err := os.Chtimes(caPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	// Bust the 60s JWKS cache so the final fetch actually dials.
+	v.cached, v.fetched = nil, time.Time{}
+	if _, err := v.fetch(); err == nil {
+		t.Fatal("expected fetch to fail after rotation away from the serving CA — stale keep-alive connection was reused")
+	}
+}
+
+func writeCAPEM(t *testing.T, path string, der []byte) {
+	t.Helper()
+	certOut := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(path, certOut, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// selfSignedCertDER mints an unrelated self-signed certificate (CA-A
+// in the rotation test).
+func selfSignedCertDER(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "stale-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der
 }

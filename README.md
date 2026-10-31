@@ -61,6 +61,12 @@ setup). See the networking notes in `docs/ARCHITECTURE.md`.
 - `docs/ARCHITECTURE.md` — components, token flow, claim schema
 - `docs/DEMO_SCENARIOS.md` — the six scenarios and what each proves
 - `docs/LEARNING_GUIDE.md` — guided tour of the security ideas
+- `docs/PRODUCTION_RECOMMENDATIONS.md` — from demo to production on OpenShift
+
+Two deployment paths run the same scenarios: Podman (zero-prep, one
+host — the quick starts above) and OpenShift/ROSA
+(`deploy/openshift/`, the production-representative reference; see
+"Running on OpenShift" in `docs/DEMO_SCENARIOS.md`).
 
 ## Repository layout
 
@@ -69,7 +75,8 @@ setup). See the networking notes in `docs/ARCHITECTURE.md`.
 | `token-issuer/` | Go token issuer (subject tokens, RFC 8693 exchanges, SVID verification) |
 | `document-service/` | Go protected resource server, one instance per department |
 | `deploy/podman/` | SPIRE configs, gateway/services scripts, provider profiles |
-| `scripts/` | setup, teardown, and one script per scenario |
+| `deploy/openshift/` | Helm values, manifests, and setup for ROSA/OpenShift |
+| `scripts/` | setup, teardown, one script per scenario, and the driver harness |
 | `config/users.yaml` | demo users and departments |
 
 Derived from NVIDIA's OpenShell `spiffe-token-exchange-demo` (Apache-2.0)
