@@ -30,12 +30,19 @@ FINANCE_LOCAL_PORT="${ZT2_FINANCE_LOCAL_PORT:-18102}"
 FINANCE_LOCAL="http://127.0.0.1:$FINANCE_LOCAL_PORT"
 
 # ensure_forward PORT RESOURCE — start a port-forward unless one is
-# already recorded and alive for this port.
+# already recorded, alive, AND healthy for this port. A live PID alone
+# is not enough: setup.sh rollout-restarts the deployments, and the
+# forward process can outlive its target pod, tunneling to nothing.
 ensure_forward() {
     local port="$1" resource="$2"
     local pidfile="$STATE_DIR/forward-$port.pid"
-    if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+    if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null &&
+        curl -fsS --max-time 2 "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then
         return 0
+    fi
+    if [[ -f "$pidfile" ]]; then
+        kill "$(cat "$pidfile")" 2>/dev/null || true
+        rm -f "$pidfile"
     fi
     oc -n zt-demo port-forward "$resource" "${port}:8080" >/dev/null 2>&1 &
     echo $! >"$pidfile"

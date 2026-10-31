@@ -101,8 +101,11 @@ func caBundleModTime(path string) (time.Time, error) {
 	return info.ModTime(), nil
 }
 
-// reloadCABundle re-reads the trust bundle into the client's RootCAs
-// when its mtime has moved. Called with v.mu held.
+// reloadCABundle re-reads the trust bundle when its mtime has moved,
+// replacing the client's transport entirely: mutating RootCAs on a
+// live transport does not re-verify keep-alive connections already
+// authenticated under a removed CA, so the old transport (and its
+// idle connections) is closed. Called with v.mu held.
 func (v *jwksVerifier) reloadCABundle() {
 	if v.caPath == "" {
 		return
@@ -117,9 +120,12 @@ func (v *jwksVerifier) reloadCABundle() {
 		return
 	}
 	v.caModTime = mt
-	transport, ok := v.client.Transport.(*http.Transport)
-	if ok {
-		transport.TLSClientConfig.RootCAs = pool
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+	old := v.client.Transport
+	v.client.Transport = transport
+	if old, ok := old.(interface{ CloseIdleConnections() }); ok {
+		old.CloseIdleConnections()
 	}
 }
 

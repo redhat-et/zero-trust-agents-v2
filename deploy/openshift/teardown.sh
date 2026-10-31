@@ -13,6 +13,9 @@ require_oc
 
 ALL=0
 [[ "${1:-}" == "--all" ]] && ALL=1
+# Must match the manifest setup.sh applied (deleting a different
+# version's CRDs would leave resources behind).
+AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.9}"
 
 echo "== port-forwards =="
 if [[ -f "$STATE_DIR/openshift-forward.pid" ]]; then
@@ -60,7 +63,7 @@ if [[ "$ALL" == "1" ]]; then
     helm -n spire uninstall spire-crds >/dev/null 2>&1 || true
     oc delete crd clusterspiffeids.spire.spiffe.io >/dev/null 2>&1 || true
     oc delete namespace spire openshell agent-sandbox-system >/dev/null 2>&1 || true
-    oc delete -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml >/dev/null 2>&1 || true
+    oc delete -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox.yaml" >/dev/null 2>&1 || true
 else
     echo "leaving spire CRDs, spire/openshell namespaces, and agent-sandbox-system (use --all to remove)"
 fi

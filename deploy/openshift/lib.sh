@@ -47,3 +47,17 @@ profile_dept() {
         *) echo engineering ;;
     esac
 }
+
+# substitute_profile FILE DEPT — write the substituted profile to
+# stdout: @DOC_HOST@ -> document-<dept> FQDN, @DOC_PORT@ -> 8080, and
+# the entire @ALLOWED_IPS@ line is DELETED (a sed blanking would
+# leave a whitespace-only line — valid YAML, silently wrong profile).
+# The FQDN must be fully qualified: the sandbox's DNS proxy matches
+# endpoint hosts exactly and the workload's resolver has no search
+# domains (the short .svc form NXDOMAINs inside sandboxes).
+substitute_profile() {
+    awk -v host="document-$2.zt-demo.svc.cluster.local" -v port="8080" '
+        /@ALLOWED_IPS@/ { next }
+        { gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port); print }
+    ' "$1"
+}

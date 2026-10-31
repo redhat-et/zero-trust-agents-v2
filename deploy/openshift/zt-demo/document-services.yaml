@@ -29,6 +29,7 @@ spec:
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
@@ -93,6 +94,7 @@ spec:
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
@@ -157,6 +159,7 @@ spec:
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
@@ -221,6 +224,7 @@ spec:
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
@@ -285,6 +289,7 @@ spec:
       containers:
         - name: document-service
           image: quay.io/panni/zt2-document-service:v2
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080

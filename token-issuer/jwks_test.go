@@ -353,6 +353,20 @@ func TestJWKSCABundleRotation(t *testing.T) {
 	if _, err := v.fetch(); err != nil {
 		t.Fatalf("expected fetch to succeed after CA rotation, got: %v", err)
 	}
+	// The successful fetch left a keep-alive connection authenticated
+	// under CA-B. Rotating the bundle to an unrelated CA-C must tear it
+	// down: reusing it would keep a connection trusted under a removed
+	// CA alive.
+	future = future.Add(time.Second)
+	writeCAPEM(t, caPath, selfSignedCertDER(t))
+	if err := os.Chtimes(caPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	// Bust the 60s JWKS cache so the final fetch actually dials.
+	v.cached, v.fetched = nil, time.Time{}
+	if _, err := v.fetch(); err == nil {
+		t.Fatal("expected fetch to fail after rotation away from the serving CA — stale keep-alive connection was reused")
+	}
 }
 
 func writeCAPEM(t *testing.T, path string, der []byte) {

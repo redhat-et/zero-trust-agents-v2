@@ -25,6 +25,8 @@ ZT2_QUAY_NS="${ZT2_QUAY_NS:-panni}"
 ZT2_IMAGE_TAG="${ZT2_IMAGE_TAG:-v2}"
 SPIRE_CHART_VERSION="${SPIRE_CHART_VERSION:-0.29.0}"
 SPIRE_CRDS_VERSION="${SPIRE_CRDS_VERSION:-0.5.0}"
+OPENSHELL_CHART_VERSION="${OPENSHELL_CHART_VERSION:-0.1.6}"
+AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.9}"
 
 echo "== 0/7 prechecks =="
 # Landlock requires OpenShift 4.19+ (OpenShell runtime requirement).
@@ -97,7 +99,7 @@ helm upgrade --install spire spiffe/spire --version "$SPIRE_CHART_VERSION" \
     -n spire -f "$ROOT/deploy/openshift/spire/values.yaml" --wait
 
 echo "== 2/7 Agent Sandbox controller =="
-oc apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml
+oc apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox.yaml"
 oc -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=300s
 
 echo "== 3/7 OpenShell gateway =="
@@ -109,6 +111,7 @@ ensure_pull_secret zt-demo
 APPS_DOMAIN="$(oc get ingresscontroller default -n openshift-ingress-operator -o jsonpath='{.status.domain}')"
 ROUTE_HOST="zt2-gateway.${APPS_DOMAIN}"
 helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
+    --version "$OPENSHELL_CHART_VERSION" \
     -n openshell -f "$ROOT/deploy/openshift/openshell/values.yaml" \
     --set openshiftRoute.host="$ROUTE_HOST" \
     --set "pkiInitJob.serverDnsNames[0]=$ROUTE_HOST" \
@@ -151,6 +154,13 @@ fi
 oc apply -f "$ROOT/deploy/openshift/zt-demo/token-issuer.yaml"
 oc apply -f "$ROOT/deploy/openshift/zt-demo/document-services.yaml"
 oc apply -f "$ROOT/deploy/openshift/zt-demo/networkpolicy.yaml"
+# The images use the mutable :v2 tag with imagePullPolicy: Always, so
+# an unchanged manifest does not roll a rebuilt image — restart to
+# pick it up (the runbook's "rebuild then re-run setup" flow).
+oc -n zt-demo rollout restart deployment/token-issuer >/dev/null
+for dept in engineering finance admin hr public; do
+    oc -n zt-demo rollout restart "deployment/document-$dept" >/dev/null
+done
 wait_rollout zt-demo deployment/token-issuer
 for dept in engineering finance admin hr public; do
     wait_rollout zt-demo "deployment/document-$dept"
@@ -223,12 +233,7 @@ profile_out_dir="${STATE_DIR}/openshift-profiles"
 mkdir -p "$profile_out_dir"
 for profile in alice-engineering alice-hr carol-hr nodelegation; do
     dept="$(profile_dept "$profile")"
-    # Same substitution contract as profiles/test-substitution.sh: the
-    # @ALLOWED_IPS@ line is DELETED, not blanked.
-    awk -v host="document-${dept}.zt-demo.svc.cluster.local" -v port="8080" '
-        /@ALLOWED_IPS@/ { next }
-        { gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port); print }
-    ' "$ROOT/deploy/openshift/profiles/$profile.yaml.in" \
+    substitute_profile "$ROOT/deploy/openshift/profiles/$profile.yaml.in" "$dept" \
         >"$profile_out_dir/$profile.yaml"
     "${OS[@]}" profile lint -f "$profile_out_dir/$profile.yaml" | tail -1
     "${OS[@]}" profile import -f "$profile_out_dir/$profile.yaml" | tail -1
