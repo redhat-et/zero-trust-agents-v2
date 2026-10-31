@@ -44,10 +44,9 @@ pods mount it), registers the gateway with the CLI (mTLS; a stale
 the four provider profiles, and starts the loopback port-forward for
 the subject-token minter.
 
-Expected wall-clock from an empty cluster: measure it (the original
-bring-up was iterative); chart installs plus image pulls plus
-rollouts are roughly 5-10 minutes. The script is idempotent — re-run
-it after any partial failure.
+Expected wall-clock from an empty cluster: 4:03 measured on a fresh
+ROSA 4.22.20 cluster (2026-10-30, images pre-pushed). The script is
+idempotent — re-run it after any partial failure.
 
 ## 3. Run the scenarios
 

@@ -28,10 +28,11 @@ zt2-sandboxes refusal recorded above holds either way (it tests the
 wrong-namespace direction, not the fallback), but the openshell-ns
 claim ("an arbitrary openshell-ns pod gets no identity") was untested.
 The override now sits inside `clusterSPIFFEIDs`
-(`helm template … | grep -c 'fallback: true'` returns 0). Re-verify on
-the next cluster: after `helm upgrade`, `oc get clusterspiffeid` must
-not list `spire-spire-default`, and a throwaway pod in `openshell`
-must get no SVID.
+(`helm template … | grep -c 'fallback: true'` returns 0). Re-verified
+on a fresh cluster 2026-10-30 (setup wall-clock 4:03 from empty):
+`oc get clusterspiffeid` does not list `spire-spire-default`, and a
+throwaway SVID-fetch pod in `openshell` (default SA, no gateway
+labels) is refused with "no identity issued".
 
 ## What was verified
 
