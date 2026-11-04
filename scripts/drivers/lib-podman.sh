@@ -117,7 +117,8 @@ fetch_rogue_svid() {
     SPIRE_AGENT_PARENT_ID="spiffe://openshell.local/openshell/spire-agent/demo" \
     SPIRE_SERVER_CONTAINER=zt2-spire-server \
     SANDBOX_SELECTORS="docker:label:zt2.rogue:true" \
-        bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "rogue-workload-1" 2>/dev/null || true
+        bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "rogue-workload-1" \
+        >/dev/null 2>&1 || true
     fetch_svid "$spiffe_id" "zt2.rogue=true" && return 0
     printf "fetch_rogue_svid: indeterminate (registration or fetch failed)\n" >&2
     return 2
