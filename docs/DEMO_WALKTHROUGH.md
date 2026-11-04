@@ -309,8 +309,14 @@ TOKEN=$(curl -fsS "http://127.0.0.1:8090/demo-subject-token?user=alice" \
 Create a provider with Alice's delegation:
 
 ```bash
-"${OS[@]}" sandbox delete walkthrough-s1 2>/dev/null || true
-"${OS[@]}" provider delete walkthrough-eng 2>/dev/null || true
+"${OS[@]}" sandbox delete walkthrough-s1 >/dev/null 2>&1 || true
+for _ in $(seq 1 20); do
+  "${OS[@]}" sandbox get walkthrough-s1 >/dev/null 2>&1 || break
+  sleep 3
+done
+if "${OS[@]}" provider get walkthrough-eng >/dev/null 2>&1; then
+  "${OS[@]}" provider delete walkthrough-eng
+fi
 "${OS[@]}" provider create --name walkthrough-eng \
   --type zt2-alice-engineering-v2 \
   --credential "subject_token=$TOKEN"
@@ -378,6 +384,10 @@ Clean up:
 
 ```bash
 "${OS[@]}" sandbox delete walkthrough-s1
+for _ in $(seq 1 20); do
+  "${OS[@]}" sandbox get walkthrough-s1 >/dev/null 2>&1 || break
+  sleep 3
+done
 "${OS[@]}" provider delete walkthrough-eng
 ```
 
