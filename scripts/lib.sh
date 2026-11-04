@@ -76,6 +76,39 @@ sandbox_curl() {
     return 1
 }
 
+# decode_jwt TOKEN — print a JWT's header and claims as JSON. Uses
+# python3, which the harness already requires, so the scripts do not need
+# a separate jwt CLI. The signature is decoded, not verified: this is for
+# showing what a token carries, never for trusting it.
+decode_jwt() {
+    local token="$1" header payload
+    header="${token%%.*}"
+    payload="${token#*.}"
+    payload="${payload%%.*}"
+    python3 - "$header" "$payload" <<'PY'
+import base64
+import binascii
+import json
+import sys
+
+
+def decode(segment):
+    segment = segment.strip()
+    padded = segment + "=" * (-len(segment) % 4)
+    standard = padded.replace("-", "+").replace("_", "/")
+    return json.loads(base64.b64decode(standard))
+
+
+try:
+    print(json.dumps(
+        {"header": decode(sys.argv[1]), "payload": decode(sys.argv[2])},
+        indent=2,
+    ))
+except (ValueError, binascii.Error) as err:
+    sys.exit(f"decode_jwt: not a decodable JWT segment: {err}")
+PY
+}
+
 pass() { printf "  \033[32m✅ PASS\033[0m %s\n" "$1"; }
 fail() { printf "  \033[31m❌ FAIL\033[0m %s\n" "$1"; exit 1; }
 

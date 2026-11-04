@@ -42,6 +42,9 @@ INTERMEDIATE="$(curl -fsS -X POST "$ISSUER_LOCAL/token" \
     -d "audience=$SANDBOX_SPIFFE_ID" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 
+printf "\nIntermediate token (aud = supervisor SPIFFE ID):\n"
+decode_jwt "$INTERMEDIATE"
+
 # Final exchange as the supervisor, scoped for engineering.
 FINAL="$(curl -fsS -X POST "$ISSUER_LOCAL/token" \
     -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
@@ -51,6 +54,8 @@ FINAL="$(curl -fsS -X POST "$ISSUER_LOCAL/token" \
     -d "audience=engineering" -d "scope=engineering" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 echo "  final token minted (audience=engineering, scope=engineering)"
+printf "\nFinal token (aud = engineering, scope = engineering):\n"
+decode_jwt "$FINAL"
 
 # Sanity: the token works against the engineering service.
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' \

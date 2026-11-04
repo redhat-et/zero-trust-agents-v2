@@ -17,4 +17,5 @@ echo "  sandbox: $ID (SPIFFE ID registered)"
 
 sandbox_curl alice-s1 "$ENGINEERING_URL/documents/DOC-001" "Engineering Roadmap"
 echo "$SANDBOX_CURL_OUTPUT" | head -3
+echo "  note: the supervisor injects the final token; the sandbox never sees it"
 pass "sandbox fetched DOC-001 through the full token-exchange chain"
