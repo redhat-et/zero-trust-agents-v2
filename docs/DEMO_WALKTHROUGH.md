@@ -264,8 +264,8 @@ intersection with OPA at request time.
 
 ### Preflight
 
-Requirements: a running podman machine, openshell 0.1.6, Go 1.22+, curl,
-python3. Build the demo container images if they are missing:
+Requirements: a running podman machine, openshell 0.1.6, Go 1.22+, openssl,
+curl, python3. Build the demo container images if they are missing:
 
 ```bash
 deploy/podman/scripts/build-images.sh
@@ -452,7 +452,7 @@ proxy's `502`.
 | Symptom | Cause | What to do |
 | ------- | ----- | ---------- |
 | Setup fails at `start-services.sh` on a fresh clone | `make build` does not build the demo images | Run `deploy/podman/scripts/build-images.sh` |
-| First sandbox request returns 502 | The SPIRE entry has not reached the agent's cache, and the supervisor caches the failed grant | Wait after registration; `scripts/lib.sh` sleeps 3 seconds |
+| First sandbox request returns 502 | The SPIRE entry has not reached the agent's cache, and the supervisor caches the failed grant | Wait after registration; `register_sandbox` in `scripts/drivers/lib-podman.sh` sleeps 3 seconds |
 | Supervisor logs are empty on success | Only warnings are logged at the default level | Check the gateway logs for `ExchangeProviderSubjectToken` |
 | `provider get` shows no secret | Credentials are stored encrypted and never injected | Expected; the sandbox must not see the user token |
 | Both sandbox and supervisor match the SPIRE entry | Selectors do not include `isolation-role` | Only the supervisor has the Workload API socket |
