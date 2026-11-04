@@ -326,11 +326,13 @@ nohup "${OS[@]}" sandbox create --name walkthrough-s1 \
   > /tmp/walkthrough-s1.log 2>&1 < /dev/null &
 disown
 for i in $(seq 1 60); do
-  ID=$("${OS[@]}" sandbox get walkthrough-s1 2>/dev/null | awk '/Id:/ {print $2; exit}')
-  [[ -n "$ID" ]] && break
+  OUT=$("${OS[@]}" sandbox get walkthrough-s1 2>/dev/null || true)
+  ID=$(awk '/Id:/ {print $2; exit}' <<<"$OUT")
+  PHASE=$(awk '/Phase:/ {print $2; exit}' <<<"$OUT")
+  [[ -n "$ID" && "$PHASE" == "Ready" ]] && break
   sleep 2
 done
-if [[ -z "$ID" ]]; then
+if [[ -z "$ID" || "$PHASE" != "Ready" ]]; then
   printf "sandbox did not become ready; see /tmp/walkthrough-s1.log\n" >&2
   exit 1
 fi
