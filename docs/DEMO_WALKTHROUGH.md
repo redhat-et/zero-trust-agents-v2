@@ -77,7 +77,7 @@ flowchart LR
 | Document service | One per department. Validates the final token's audience and scope. |
 | SPIRE server | Trust-domain authority: registration entries, signing keys, datastore. |
 | SPIRE agent | Attests workloads locally and brokers SVIDs through the Workload API socket. |
-| OIDC discovery provider | Publishes the server's JWT-SVID verification keys as standard OIDC/JWKS. Not on the issuance path. |
+| OIDC discovery provider | Publishes the server's JWT-SVID verification keys as standard OIDC/JWKS. It does not sign or mint tokens, but the issuer depends on it to verify SVIDs before any exchange. |
 | OpenShell gateway | Holds providers and subject tokens; performs the intermediate exchange. |
 | Supervisor | Injected beside each sandbox; fetches the sandbox SVID, requests tokens, injects the final token, proxies traffic. |
 
@@ -106,9 +106,8 @@ questions:
 | | Scope | Audience |
 | --- | ----- | -------- |
 | Question | What may the bearer do? | Who is this token for? |
-| Enforced at mint | by the intersection | not as entitlement |
-| Enforced at use | document's required department | service's own department |
-| Failure | `403 insufficient_department_permissions` | `403 invalid_audience` |
+| Enforced at mint | empty intersection gives `403 insufficient_department_permissions` (except `public`) | not checked as entitlement |
+| Enforced at use | document's required department gives `403 insufficient_scope`; list responses omit unauthorized documents | must name this department, otherwise `403 invalid_audience` |
 
 A profile for Alice with `audience: engineering` and `scopes: [hr]`
 means "mint a token for the engineering service that asks for hr
@@ -331,6 +330,10 @@ for i in $(seq 1 60); do
   [[ -n "$ID" ]] && break
   sleep 2
 done
+if [[ -z "$ID" ]]; then
+  printf "sandbox did not become ready; see /tmp/walkthrough-s1.log\n" >&2
+  exit 1
+fi
 echo "sandbox id: $ID"
 ```
 
