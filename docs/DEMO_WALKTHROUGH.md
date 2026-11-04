@@ -204,11 +204,18 @@ The listener split is deliberate:
 | Listener | Endpoint | Reached by | Publication |
 | -------- | -------- | ---------- | ----------- |
 | `:8080` | `POST /token` | gateway, supervisors, scenario curls | loopback; plus LAN on Linux |
-| `:8090` | `GET /demo-subject-token` | the laptop only | loopback only, always |
+| `:8090` | `GET /demo-subject-token` | the laptop, and containers on the `zt2` network | host publish is loopback-only; the listener binds all interfaces inside the container |
 
 If the minter shared `:8080`, publishing the authenticated endpoint
 would also publish "mint a token as any user". On OpenShift the minter
 is reachable only through `oc port-forward`, never a Route or Service.
+
+Host publication and container-network reachability are different
+things. The host port is bound to `127.0.0.1`, but the issuer container
+joins the shared `zt2` network and its demo listener binds `:8090` on
+all interfaces, so any container on that network can reach the minter.
+The demo treats the podman network as trusted; do not copy this endpoint
+into a deployment where untrusted workloads share a network.
 
 Subject token claims:
 
@@ -232,9 +239,9 @@ against the customer IdP's JWKS.
 flowchart TD
     R["Sandbox request"] --> C1{"Caller has a valid<br/>gateway or supervisor SVID?"}
     C1 -->|"no"| D1["401 invalid_client_assertion"]
-    C1 -->|"yes"| C2{"Departments intersect scope<br/>and non-empty?"}
-    C2 -->|"no"| D2["403 insufficient_department_permissions<br/>nothing minted"]
-    C2 -->|"yes"| C3{"Token audience matches this service<br/>and scope covers the document?"}
+    C1 -->|"yes"| C2{"Intersection empty?"}
+    C2 -->|"yes, and audience is not public"| D2["403 insufficient_department_permissions<br/>nothing minted"]
+    C2 -->|"no, or audience is public"| C3{"Token audience matches this service<br/>and scope covers the document?"}
     C3 -->|"no"| D3["403 invalid_audience<br/>or insufficient_scope"]
     C3 -->|"yes"| OK["200 document"]
 ```
@@ -242,8 +249,13 @@ flowchart TD
 | Checkpoint | Where | Decision |
 | ---------- | ----- | -------- |
 | Workload identity | `token-issuer/server.go`, `handleToken` | The client assertion must verify as a gateway or supervisor SVID under the registered prefix. |
-| Capability | `token-issuer/server.go`, `handleSupervisorExchange` | `user.departments` intersected with the requested scope must be non-empty; the minted scope is exactly the intersection. |
+| Capability | `token-issuer/server.go`, `handleSupervisorExchange` | `user.departments` intersected with the requested scope must be non-empty, except for `audience=public`, which mints an empty scope; otherwise the minted scope is exactly the intersection. |
 | Resource policy | `document-service/server.go`, `authenticate` and `hasScope` | The final token's `aud` must name this department, and its scope must cover the document's required departments. |
+
+The `public` audience is the one exception to the non-empty rule: an
+empty intersection is allowed, and the final token carries an empty
+scope. The public document service requires no department, so its
+resource check still passes, but only for public documents.
 
 The first two are mint-time decisions; the third is defense in depth.
 This is v2's headline difference from v1, which enforced the same
@@ -286,10 +298,10 @@ stay independently runnable and always use a fresh subject token.
 
 ### Walk through scenario 1 manually
 
-Define the gateway client and mint a subject token:
+Run these from the repository root; adjust the placeholder path.
 
 ```bash
-cd /Users/panni/work/zero-trust-agents-v2
+cd /path/to/zero-trust-agents-v2
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 TOKEN=$(curl -fsS "http://127.0.0.1:8090/demo-subject-token?user=alice" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
@@ -366,29 +378,35 @@ Clean up:
 
 ### Decoded tokens in scenario output
 
-Scenarios 2, 5, and 6 print decoded JWTs at the points where tokens exist:
+Scenarios 1, 2, 5, and 6 print decoded JWTs at the points where tokens exist:
 
 | Scenario | Decoded tokens | Teaching point |
 | -------- | -------------- | -------------- |
+| 1 | subject | identity and attributes, not capability; the final token is injected by the supervisor and never visible |
 | 2 | subject, intermediate | the intermediate has no `hr` scope and no departments |
-| 5 | rogue SVID | valid signature, SPIFFE ID outside the supervisor prefix |
+| 5 | rogue SVID | the SPIFFE ID the issuer prefix-checks is outside the supervisor path |
 | 6 | intermediate, final | capability appears only in the final token |
 
-Scenario 1 prints a note instead: the supervisor injects the token, so
-the sandbox never sees it. Scenario 3 has no subject token at all, and
-scenario 4 never exposes the final token.
+Scenario 1 also prints a note that the sandbox never sees the final
+token. Scenario 3 has no subject token at all, and scenario 4 never
+exposes the final token.
 
 ### What the decoded tokens show
 
 These are the claims the scenario output makes visible; they are the
 fastest way to explain the chain without reading code.
 
-| Token | Key claims | What it proves |
-| ----- | ---------- | -------------- |
+| Token | Key claims | What the claims show |
+| ----- | ---------- | -------------------- |
 | Subject (scenario 2) | `sub: alice`, `departments: [engineering, finance]`, `scope: openid profile email` | identity and attributes, not capability |
 | Intermediate (scenario 2) | `aud: [sandbox SPIFFE ID]`, `scope: openid profile email`, no `departments` | delegation is audience-bound and carries no capability |
-| Rogue SVID (scenario 5) | `alg: ES256`, `sub: spiffe://openshell.local/rogue/workload/1`, `iss: http://spire-oidc:8080` | valid signature, wrong workload identity |
+| Rogue SVID (scenario 5) | `alg: ES256`, `sub: spiffe://openshell.local/rogue/workload/1`, `iss: http://spire-oidc:8080` | the SPIFFE ID the issuer prefix-checks; the 401 shows the assertion was refused |
 | Final (scenario 6) | `aud: [engineering, account]`, `scope: engineering`, `azp: supervisor SPIFFE ID` | capability appears only after the intersection |
+
+Decoding is not verification: `decode_jwt` only reads the header and
+payload. The rogue SVID is known to be SPIRE-issued because it was
+fetched from the SPIRE agent; the scenario's 401 is what shows the
+issuer refused the assertion.
 
 The first run of scenario 5 originally failed here: `fetch_rogue_svid`
 captured the registration script's stdout along with the token, producing
@@ -429,6 +447,7 @@ proxy's `502`.
 | No `compute_driver` in the OpenShift values | The Helm chart supplies the Kubernetes driver | Verify with `helm show values` or the rendered StatefulSet |
 | Scenario 5 behaves differently on OpenShift | The attestation policy refuses to mint the rogue SVID | That is the pass condition on Kubernetes |
 | Decoding the rogue SVID fails on the first run | Registration stdout was captured along with the token | Fixed in `fetch_rogue_svid`; re-running after the entry exists also worked around it |
+| The minter is reachable from other containers | Host publish is loopback-only, but the listener binds all interfaces on the `zt2` network | The demo treats that network as trusted; remove or isolate the endpoint before production |
 
 ## Scenario matrix
 
