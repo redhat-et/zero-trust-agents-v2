@@ -236,9 +236,11 @@ against the customer IdP's JWKS.
 
 ```mermaid
 flowchart TD
-    R["Sandbox request"] --> C1{"Caller has a valid<br/>gateway or supervisor SVID?"}
-    C1 -->|"no"| D1["401 invalid_client_assertion"]
-    C1 -->|"yes"| C2{"Intersection empty?"}
+    R["Exchange request at the issuer"] --> C1{"Caller has a valid<br/>gateway SVID?"}
+    C1 -->|"yes"| G1["gatewayExchange returns<br/>an intermediate token"]
+    C1 -->|"no"| C1B{"Caller has a valid<br/>supervisor SVID?"}
+    C1B -->|"no"| D1["401 invalid_client_assertion"]
+    C1B -->|"yes"| C2{"Intersection empty?"}
     C2 -->|"yes, and audience is not public"| D2["403 insufficient_department_permissions<br/>nothing minted"]
     C2 -->|"no, or audience is public"| C3{"Token audience matches this service<br/>and scope covers the document?"}
     C3 -->|"no"| D3["403 invalid_audience<br/>or insufficient_scope"]
@@ -250,6 +252,10 @@ flowchart TD
 | Workload identity | `token-issuer/server.go`, `handleToken` | The client assertion must verify as a gateway or supervisor SVID under the registered prefix. |
 | Capability | `token-issuer/server.go`, `handleSupervisorExchange` | `user.departments` intersected with the requested scope must be non-empty, except for `audience=public`, which mints an empty scope; otherwise the minted scope is exactly the intersection. |
 | Resource policy | `document-service/server.go`, `authenticate` and `hasScope` | The final token's `aud` must name this department, and its scope must cover the document's required departments. |
+
+The gateway branch also requires `demo_token_use=user_subject` and
+returns an intermediate token; the supervisor branch requires
+`demo_token_use=intermediate` and performs the intersection.
 
 The `public` audience is the one exception to the non-empty rule: an
 empty intersection is allowed, and the final token carries an empty
