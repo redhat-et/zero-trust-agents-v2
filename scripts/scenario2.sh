@@ -13,6 +13,9 @@ SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
 "${OS[@]}" provider create --name alice-hr-prov-s2-$$ --type zt2-alice-hr-v2 \
     --credential "subject_token=${SUBJECT_TOKEN}" >/dev/null
 
+printf "\nSubject token (Alice):\n"
+decode_jwt "$SUBJECT_TOKEN"
+
 ID="$(create_sandbox alice-s2 alice-hr-prov-s2-$$)"
 register_sandbox "$ID" >/dev/null
 echo "  sandbox: $ID (SPIFFE ID registered)"
@@ -33,7 +36,8 @@ pass "request denied at the proxy — no token minted with an engineering scope 
 # Issuer-side proof: drive the exact exchange the supervisor would make
 # (alice's subject token -> intermediate -> final with hr scope) and
 # observe the intersection deny directly.
-echo "  issuer-side proof (final exchange: alice + hr scope + engineering audience):"
+echo "  issuer-side proof — the supervisor would send:"
+echo "    audience=engineering scope=hr"
 GW_SVID="$(fetch_gateway_svid)"
 SUP_SVID="$(fetch_supervisor_svid "$ID")"
 INTERMEDIATE="$(curl -fsS -X POST "$ISSUER_LOCAL/token" \
@@ -42,6 +46,10 @@ INTERMEDIATE="$(curl -fsS -X POST "$ISSUER_LOCAL/token" \
     -d "client_assertion=$GW_SVID" -d "subject_token=$SUBJECT_TOKEN" \
     -d "audience=spiffe://openshell.local/openshell/sandbox/$ID" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+
+printf "\nIntermediate token (issuer-side replay, not the sandbox's):\n"
+decode_jwt "$INTERMEDIATE"
+
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$ISSUER_LOCAL/token" \
     -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
     -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \
@@ -52,6 +60,7 @@ BODY="$(curl -s -X POST "$ISSUER_LOCAL/token" \
     -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \
     -d "client_assertion=$SUP_SVID" -d "subject_token=$INTERMEDIATE" \
     -d "audience=engineering" -d "scope=hr")"
+echo "  issuer response: $STATUS $BODY"
 if [[ "$STATUS" == "403" && "$BODY" == *"insufficient_department_permissions"* ]]; then
     pass "issuer returned 403 insufficient_department_permissions — the intersection is enforced at mint time"
 else

@@ -112,12 +112,16 @@ fetch_supervisor_svid() {
 # attestation policy refuses to mint the rogue SVID at all.
 fetch_rogue_svid() {
     local spiffe_id="spiffe://openshell.local/rogue/workload/1"
-    TRUST_DOMAIN=openshell.local \
-    SANDBOX_SPIFFE_ID="$spiffe_id" \
-    SPIRE_AGENT_PARENT_ID="spiffe://openshell.local/openshell/spire-agent/demo" \
-    SPIRE_SERVER_CONTAINER=zt2-spire-server \
-    SANDBOX_SELECTORS="docker:label:zt2.rogue:true" \
-        bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "rogue-workload-1" 2>/dev/null || true
+    if ! TRUST_DOMAIN=openshell.local \
+        SANDBOX_SPIFFE_ID="$spiffe_id" \
+        SPIRE_AGENT_PARENT_ID="spiffe://openshell.local/openshell/spire-agent/demo" \
+        SPIRE_SERVER_CONTAINER=zt2-spire-server \
+        SANDBOX_SELECTORS="docker:label:zt2.rogue:true" \
+        bash "$ROOT/deploy/podman/spire/register-sandbox.sh" "rogue-workload-1" \
+        >/dev/null 2>&1; then
+        printf "fetch_rogue_svid: indeterminate (registration failed)\n" >&2
+        return 2
+    fi
     fetch_svid "$spiffe_id" "zt2.rogue=true" && return 0
     printf "fetch_rogue_svid: indeterminate (registration or fetch failed)\n" >&2
     return 2

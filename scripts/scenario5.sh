@@ -22,6 +22,8 @@ scenario_header "Scenario 5: rogue sandbox (unregistered SPIFFE ID) requests a t
 ROGUE_SVID=""
 if ROGUE_SVID="$(fetch_rogue_svid)"; then
     echo "  rogue SVID fetched (${#ROGUE_SVID} chars, validly signed by SPIRE)"
+    printf "\nRogue SVID (validly signed, wrong SPIFFE ID):\n"
+    decode_jwt "$ROGUE_SVID"
 elif [[ $? -eq 1 ]]; then
     pass "SPIRE refused to issue an identity outside the attestation policy — nothing to present"
     exit 0
