@@ -22,11 +22,12 @@ Successor to [zero-trust-agent-demo](https://github.com/redhat-et/zero-trust-age
 ## Quick start (macOS, podman machine)
 
 Requirements: podman (machine running), `openshell` CLI 0.1.6, Go 1.22+,
-curl, python3.
+openssl, curl, python3.
 
 ```console
-$ make build          # Go services
-$ scripts/setup.sh    # SPIRE + gateway + services + profiles
+$ make build                             # host binaries
+$ deploy/podman/scripts/build-images.sh  # demo container images
+$ scripts/setup.sh                       # SPIRE + gateway + services + profiles
 $ scripts/scenario1.sh
   ...
 $ scripts/teardown.sh
@@ -39,11 +40,12 @@ The setup script adds one line to the podman VM's `/etc/hosts`
 
 Requirements: podman 5.x (rootless, `systemctl --user enable --now
 podman.socket`), `openshell` CLI 0.1.6 (rpm from upstream releases), Go
-1.22+, curl, python3, and sudo for one `/etc/hosts` edit.
+1.22+, openssl, curl, python3, and sudo for one `/etc/hosts` edit.
 
 ```console
-$ make build          # Go services
-$ scripts/setup.sh    # SPIRE + gateway + services + profiles
+$ make build                             # host binaries
+$ deploy/podman/scripts/build-images.sh  # demo container images
+$ scripts/setup.sh                       # SPIRE + gateway + services + profiles
 $ scripts/scenario1.sh
   ...
 $ scripts/teardown.sh
