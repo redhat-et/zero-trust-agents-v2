@@ -11,6 +11,9 @@ scenario_header "Scenario 12: Alice's assistant tries an unbound peer"
 require_agent_env
 trap 'stop_relay alice-a2a' EXIT
 
+remove_sandbox alice-a2a
+remove_sandbox alice-a2a-2
+rm -f "$STATE_DIR/relay-alice-a2a.pid"
 sed -e "s|@DOC_HOST@|$(doc_host engineering)|" \
     -e "s|@DOC_PORT@|$(doc_port engineering)|" \
     -e "s|@A2A_HOST@|$A2A_HOST|" \
@@ -42,7 +45,11 @@ fi
 if [[ "$SANDBOX_ASK_TRACE" != *hr-analyst* ]]; then
     fail "A's trace does not name the hr-analyst peer"
 fi
-if [[ "$SANDBOX_ASK_TRACE" != *"blocked by sandbox network policy"* &&
+# A deny without a declared endpoint reaches the agent as a refused
+# connection from the supervisor; a declared-but-denied policy shows up as
+# the policy message instead. Both are the supervisor refusing egress.
+if [[ "$SANDBOX_ASK_TRACE" != *"permission denied"* &&
+    "$SANDBOX_ASK_TRACE" != *"blocked by sandbox network policy"* &&
     "$SANDBOX_ASK_TRACE" != *"policy_denied"* ]]; then
     fail "expected a supervisor policy denial, got: $SANDBOX_ASK_TRACE"
 fi

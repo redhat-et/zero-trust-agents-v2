@@ -18,6 +18,9 @@ B_ID="$(create_sandbox eng-analyst "eng-analyst-prov-15-$$" "$AGENT_IMAGE")"
 register_sandbox "$B_ID" >/dev/null
 start_relay eng-analyst 8000 "$A2A_PORT"
 
+remove_sandbox alice-a2a
+remove_sandbox alice-a2a-2
+rm -f "$STATE_DIR/relay-alice-a2a.pid"
 sed -e "s|@DOC_HOST@|$(doc_host engineering)|" \
     -e "s|@DOC_PORT@|$(doc_port engineering)|" \
     -e "s|@A2A_HOST@|$A2A_HOST|" \

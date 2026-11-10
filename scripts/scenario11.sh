@@ -18,6 +18,9 @@ register_sandbox "$B_ID" >/dev/null
 start_relay eng-analyst 8000 "$A2A_PORT"
 
 echo "  == agent A: create =="
+remove_sandbox alice-a2a
+remove_sandbox alice-a2a-2
+rm -f "$STATE_DIR/relay-alice-a2a.pid"
 sed -e "s|@DOC_HOST@|$(doc_host engineering)|" \
     -e "s|@DOC_PORT@|$(doc_port engineering)|" \
     -e "s|@A2A_HOST@|$A2A_HOST|" \
@@ -58,10 +61,14 @@ echo "  A's trace shows the a2a_call"
 
 echo "  == B's verification log =="
 B_LOG="$(agent_log eng-analyst)"
-echo "$B_LOG" | grep '"request authenticated"' | tail -1 | sed 's/^/  /'
-for claim in "sub=alice" "azp=$(sandbox_spiffe_id "$A_ID")" "scope=engineering" "aud=engineering-analyst"; do
-    if [[ "$B_LOG" != *"$claim"* ]]; then
-        fail "B's log does not show $claim"
+AUTH_LINE="$(echo "$B_LOG" | grep 'request authenticated' | tail -1)"
+[[ -n "$AUTH_LINE" ]] || fail "B logged no authenticated request"
+echo "  $AUTH_LINE"
+A_SVID="$(sandbox_spiffe_id "$A_ID")"
+for claim in "\"sub\":\"alice\"" "\"azp\":\"$A_SVID\"" \
+    "\"scope\":\"engineering\"" "engineering-analyst"; do
+    if [[ "$AUTH_LINE" != *"$claim"* ]]; then
+        fail "B's authenticated request does not show $claim"
     fi
 done
 

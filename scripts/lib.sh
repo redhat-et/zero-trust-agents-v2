@@ -283,13 +283,34 @@ wait_for_health() {
     return 1
 }
 
+# remove_sandbox NAME — delete a sandbox and wait until the name is free.
+# Deleting a sandbox does not release the provider it used, and a profile
+# cannot be replaced while a provider references it, so callers tear down
+# in that order.
+remove_sandbox() {
+    local name="$1"
+    "${OS[@]}" sandbox delete "$name" >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+        "${OS[@]}" sandbox get "$name" >/dev/null 2>&1 || return 0
+        sleep 2
+    done
+    printf "sandbox %s did not go away\n" "$name" >&2
+    return 1
+}
+
 # import_profile_runtime PROFILE_ID FILE — (re)import a profile that
 # carries a runtime value. Profiles are immutable per ID, so the old one
-# must be deleted first.
+# must be deleted first; that means dropping the providers built from it
+# (their sandboxes must already be gone).
 import_profile_runtime() {
     local id="$1" file="$2"
-    "${OS[@]}" profile delete "$id" >/dev/null 2>&1 || true
+    local prov
     mkdir -p "$STATE_DIR/profiles"
+    for prov in $("${OS[@]}" provider list 2>/dev/null |
+        awk -v t="$id" 'NR>1 && $2==t {print $1}'); do
+        "${OS[@]}" provider delete "$prov" >/dev/null 2>&1 || true
+    done
+    "${OS[@]}" profile delete "$id" >/dev/null 2>&1 || true
     "${OS[@]}" profile lint -f "$file" >/dev/null
     "${OS[@]}" profile import -f "$file" >/dev/null
 }

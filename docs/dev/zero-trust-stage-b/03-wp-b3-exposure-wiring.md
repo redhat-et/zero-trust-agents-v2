@@ -3,7 +3,7 @@
 **Plan reference:** §B.3–B.7 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
 This is the only package that runs DocsClaw inside the v2 stack.
-**Status:** implemented; scenarios 11 and 12 pending a model credential.
+**Status:** implemented; scenarios 11–15 pass on the Podman driver.
 The OpenShift pass (B3-A9) is blocked on an unreachable cluster; the gap
 is recorded in the run log, not worked around.
 **Branch:** `feature/stage-b3-a2a-wiring`.
@@ -211,7 +211,8 @@ verification, streaming/push, mainstream-agent adapters.
 | 2026-11-10 | `scripts/scenario13.sh` | PASS: exposed URL reachable from the laptop (`/health` 200); tokenless POST returns `401 missing_token`. |
 | 2026-11-10 | `scripts/scenario14.sh` | PASS: out-of-band token has `aud=engineering-analyst`, `scope=engineering`, `azp=<sandbox SVID>`; the hr analyst returns `403 invalid_audience`. |
 | 2026-11-10 | `scripts/scenario15.sh` | PASS: second Alice sandbox obtains a valid token and B returns `403 caller_not_allowed`. |
-| 2026-11-10 | `scripts/scenario11.sh`, `scripts/scenario12.sh` | Not run: they need `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL`, which were not available in this session. The scripts exit 2 with the missing variables named. |
+| 2026-11-10 | `scripts/scenario11.sh` (MaaS `rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`) | PASS. A's trace: `→ a2a_call {"message":"Please review document DOC-001 …","peer":"engineering-analyst"}` then `← a2a_call ok: [completed] …`. B logs `"request authenticated" sub="alice" azp="spiffe://openshell.local/openshell/sandbox/<A's id>" scope="engineering" aud="engineering-analyst account"`. No `jwks_unavailable` in B's log. |
+| 2026-11-10 | `scripts/scenario12.sh` | PASS. A's trace shows the attempt then `← a2a_call error: … dial tcp 198.18.0.3:18810: connect: permission denied`. A deny with no declared endpoint reaches DocsClaw as a refused connection rather than the `blocked by sandbox network policy` message a declared-but-denied policy produces. |
 | 2026-11-10 | `oc get pods -n zt-demo` | `dial tcp: lookup api.aarwb-kdpqd-969.38qf.p3.openshiftapps.com: no such host`. Cluster unreachable; B3-A9 and the OpenShift spike remain pending. B1-A7 and B2-A6 are also still pending. |
 
 <!-- markdownlint-enable MD013 -->
