@@ -56,8 +56,10 @@ token-mint time**.
 
 ## Token claim schema
 
-All demo tokens are HS256 with a shared `ACCESS_TOKEN_SECRET`
-(upstream demo pattern) and carry a `demo_token_use` discriminator:
+All demo tokens are ES256, signed by the issuer with a key only it
+holds. Every verifier fetches the issuer's `/.well-known/jwks.json` and
+holds no signing material. Tokens carry a `demo_token_use`
+discriminator:
 
 | Token | demo_token_use | azp / client_id | aud | TTL |
 |---|---|---|---|---|

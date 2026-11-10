@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/redhat-et/zero-trust-agents-v2/internal/config"
+	"github.com/redhat-et/zero-trust-agents-v2/internal/tokens"
 )
 
 func main() {
@@ -22,9 +23,14 @@ func main() {
 		logger.Error("load config", "err", err)
 		os.Exit(1)
 	}
+	signer, err := tokens.NewSignerFromFile(cfg.SigningKeyFile)
+	if err != nil {
+		logger.Error("load signing key", "err", err)
+		os.Exit(1)
+	}
 	jwks := NewJWKSVerifier(cfg.JWKSURI, cfg.SPIREIssuer, cfg.SVIDAudience)
-	srv := NewServer(cfg, jwks)
-	demoSrv := NewDemoServer(cfg, jwks)
+	srv := NewServer(cfg, jwks, signer)
+	demoSrv := NewDemoServer(cfg, jwks, signer)
 	go func() {
 		logger.Info("demo subject-token listener", "addr", demoSrv.Addr)
 		if err := demoSrv.ListenAndServe(); err != nil {

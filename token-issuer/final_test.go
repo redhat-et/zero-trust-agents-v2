@@ -46,7 +46,7 @@ func decodeFinal(t *testing.T, body map[string]any) tokens.Claims {
 	if tok == "" {
 		t.Fatalf("no access_token in %v", body)
 	}
-	claims, err := tokens.Verify(secret, tok)
+	claims, err := testIssuerSigner.Verify(tok)
 	if err != nil {
 		t.Fatalf("final token does not verify: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestFinalExchangeUnsupportedAudience(t *testing.T) {
 func TestFinalExchangeUnknownUser(t *testing.T) {
 	ts := newExchangeServer(t, supervisorJWKS())
 	// A validly signed intermediate for a user not in users.yaml.
-	tok, err := tokens.Sign(secret, tokens.Claims{
+	tok, err := testIssuerSigner.Sign(tokens.Claims{
 		"iss": "http://token-issuer.zt-demo.svc", "sub": "mallory",
 		"aud": supervisorSVIDID, "demo_token_use": tokens.UseIntermediate,
 		"iat": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(),

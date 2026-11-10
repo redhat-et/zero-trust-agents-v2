@@ -5,7 +5,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -31,6 +30,7 @@ type Config struct {
 	SVIDAudience     string
 	TokenIssuer      string
 	ListenAddr       string
+	SigningKeyFile   string
 }
 
 func envOr(key, def string) string {
@@ -41,12 +41,9 @@ func envOr(key, def string) string {
 }
 
 // Load reads users from the YAML file at path and applies environment
-// overrides. ACCESS_TOKEN_SECRET is validated but not retained: callers
-// that need it read it directly from the environment.
+// overrides. The signing key's presence is validated by the issuer when
+// it loads the file, not here: verifiers of this package never hold it.
 func Load(path string) (*Config, error) {
-	if os.Getenv("ACCESS_TOKEN_SECRET") == "" {
-		return nil, errors.New("ACCESS_TOKEN_SECRET is required")
-	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read users file: %w", err)
@@ -65,5 +62,6 @@ func Load(path string) (*Config, error) {
 		SVIDAudience:     envOr("JWT_SVID_AUDIENCE", "http://token-issuer.zt-demo.svc"),
 		TokenIssuer:      envOr("ACCESS_TOKEN_ISSUER", "http://token-issuer.zt-demo.svc"),
 		ListenAddr:       envOr("PORT", ":8080"),
+		SigningKeyFile:   envOr("ACCESS_TOKEN_SIGNING_KEY_FILE", "/etc/zt2/access-token-signing-key.pem"),
 	}, nil
 }

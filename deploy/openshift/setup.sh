@@ -146,11 +146,31 @@ wait_route
 
 echo "== 4/7 zt-demo services =="
 oc apply -f "$ROOT/deploy/openshift/zt-demo/namespace.yaml"
+gen_signing_key() {
+    local key
+    key="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+    if [[ "$key" != *"BEGIN PRIVATE KEY"* ]]; then
+        printf "openssl could not generate the access-token signing key\n" >&2
+        return 1
+    fi
+    printf '%s\n' "$key"
+}
 if ! oc -n zt-demo get secret zt2-secrets >/dev/null 2>&1; then
-    ACCESS_TOKEN_SECRET="$(openssl rand -hex 32)"
+    signing_key="$(gen_signing_key)"
     oc -n zt-demo create secret generic zt2-secrets \
-        --from-literal=access-token-secret="$ACCESS_TOKEN_SECRET" >/dev/null
+        --from-literal=access-token-signing-key="$signing_key" >/dev/null
+elif ! oc -n zt-demo get secret zt2-secrets \
+    -o jsonpath='{.data.access-token-signing-key}' | grep -q .; then
+    # A secret from an earlier run carries the retired shared secret but
+    # no signing key; add one without disturbing anything else.
+    signing_key="$(gen_signing_key)"
+    signing_key_b64="$(printf '%s' "$signing_key" | base64 | tr -d '\n')"
+    oc -n zt-demo patch secret zt2-secrets --type merge \
+        -p "{\"data\":{\"access-token-signing-key\":\"${signing_key_b64}\"}}" >/dev/null
 fi
+# The shared secret is no longer used by any workload.
+oc -n zt-demo patch secret zt2-secrets --type merge \
+    -p '{"data":{"access-token-secret":null}}' >/dev/null 2>&1 || true
 oc apply -f "$ROOT/deploy/openshift/zt-demo/token-issuer.yaml"
 oc apply -f "$ROOT/deploy/openshift/zt-demo/document-services.yaml"
 oc apply -f "$ROOT/deploy/openshift/zt-demo/networkpolicy.yaml"

@@ -42,13 +42,17 @@ cluster-admin territory and gate it with RBAC accordingly.
 
 ## Secrets
 
-The demo mints HS256 tokens with a shared `ACCESS_TOKEN_SECRET` (the
-upstream demo pattern). Production should use asymmetric signing
-(RS256/ES256): the document services then verify with the issuer's
-public key and never hold signing material. The gateway's JWT signing
-keys and SPIRE's CA should be persisted and rotated — on a
-throwaway cluster they are ephemeral, which is fine for a demo and
-wrong for production.
+Access tokens are ES256-signed. The issuer holds the private key — a
+Kubernetes Secret on OpenShift, a `0600` file under the state directory
+on Podman — and the document services verify through
+`/.well-known/jwks.json` without ever holding signing material. The
+demo fetches that JWKS over plain HTTP; production must serve it over
+TLS and pin the CA, because the key set is the only trust anchor for
+access tokens. The demo does not rotate the key: a production design
+would use a KMS and publish overlapping keys during rotation. The
+gateway's JWT signing keys and SPIRE's CA should be persisted and
+rotated — on a throwaway cluster they are ephemeral, which is fine for
+a demo and wrong for production.
 
 ## Human identity: any IdP
 

@@ -42,11 +42,8 @@ spec:
             - name: demo
               containerPort: 8090
           env:
-            - name: ACCESS_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zt2-secrets
-                  key: access-token-secret
+            - name: ACCESS_TOKEN_SIGNING_KEY_FILE
+              value: /etc/zt2/access-token-signing-key.pem
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
             - name: JWT_SVID_AUDIENCE
@@ -82,6 +79,9 @@ spec:
             - name: spiffe-bundle
               mountPath: /etc/spiffe-bundle
               readOnly: true
+            - name: signing-key
+              mountPath: /etc/zt2
+              readOnly: true
         # spiffe-helper sidecar (upstream
         # examples/spiffe-token-exchange-demo pattern): fetches the
         # SPIFFE trust bundle from the SPIRE agent via the CSI-mounted
@@ -115,6 +115,12 @@ spec:
             readOnly: true
         - name: spiffe-bundle
           emptyDir: {}
+        - name: signing-key
+          secret:
+            secretName: zt2-secrets
+            items:
+              - key: access-token-signing-key
+                path: access-token-signing-key.pem
         - name: helper-config
           configMap:
             name: spiffe-helper-conf

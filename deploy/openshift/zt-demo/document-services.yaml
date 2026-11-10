@@ -34,11 +34,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: ACCESS_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zt2-secrets
-                  key: access-token-secret
+            - name: ACCESS_TOKEN_JWKS_URL
+              value: http://token-issuer.zt-demo.svc:8080/.well-known/jwks.json
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
             - name: DEPARTMENT
@@ -99,11 +96,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: ACCESS_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zt2-secrets
-                  key: access-token-secret
+            - name: ACCESS_TOKEN_JWKS_URL
+              value: http://token-issuer.zt-demo.svc:8080/.well-known/jwks.json
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
             - name: DEPARTMENT
@@ -164,11 +158,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: ACCESS_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zt2-secrets
-                  key: access-token-secret
+            - name: ACCESS_TOKEN_JWKS_URL
+              value: http://token-issuer.zt-demo.svc:8080/.well-known/jwks.json
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
             - name: DEPARTMENT
@@ -229,11 +220,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: ACCESS_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zt2-secrets
-                  key: access-token-secret
+            - name: ACCESS_TOKEN_JWKS_URL
+              value: http://token-issuer.zt-demo.svc:8080/.well-known/jwks.json
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
             - name: DEPARTMENT
@@ -294,11 +282,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: ACCESS_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zt2-secrets
-                  key: access-token-secret
+            - name: ACCESS_TOKEN_JWKS_URL
+              value: http://token-issuer.zt-demo.svc:8080/.well-known/jwks.json
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
             - name: DEPARTMENT

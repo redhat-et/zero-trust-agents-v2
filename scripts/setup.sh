@@ -91,7 +91,8 @@ Demo environment ready.
   token issuer:   http://127.0.0.1:8080 (alias token-issuer.zt-demo.svc)
   doc services:   $doc_summary
   gateway:        http://127.0.0.1:18083 (name zt2)
-  shared secret:  $STATE_DIR/access-token-secret
+  signing key:    $STATE_DIR/access-token-signing-key.pem (issuer only)
+  token JWKS:     http://127.0.0.1:8080/.well-known/jwks.json
 
 Run scenarios: scripts/scenario1.sh .. scenario6.sh
 EOF

@@ -52,12 +52,12 @@ with OPA at request time; here the token itself is born narrow.
 
 Two teaching notes hidden in the implementation:
 
-- **The shared HS256 secret is deliberately a demo shortcut.** The
-  issuer and document services share `ACCESS_TOKEN_SECRET`, which means
-  the resource server *could* mint its own tokens — fine here, and a
-  useful contrast with the asymmetric (SPIRE-signed) SVID path running
-  right beside it. A production design would use asymmetric signing so
-  verifiers hold only public keys.
+- **Access tokens are asymmetric, but rotation is still a shortcut.**
+  The issuer signs ES256 with a key it holds alone, and the document
+  services verify through the issuer's published JWKS — the same
+  principle as the SPIRE-signed SVID path running beside it. What the
+  demo does not do is rotate the key or keep it in a KMS; a production
+  design would.
 - **`GET /demo-subject-token` is the simulated login, not a real one.**
   It mints any known user's subject token with no authentication — in a
   real system this endpoint is your IdP. The blast radius is contained
@@ -104,8 +104,8 @@ the podman-machine specifics this demo had to accommodate.
 ## Suggested reading order in the code
 
 1. `internal/tokens/tokens.go` — what a verifier must check (alg
-   pinning, constant-time compare; watch `TestVerifyAlgNone` and
-   `TestVerifyAlgRS256` fail in `tokens_test.go`).
+   pinning, mandatory `kid`, mandatory `exp`; watch `TestVerifyAlgNone`
+   and `TestVerifyAlgHS256` fail in `tokens_test.go`).
 1. `token-issuer/jwks.go` — P-1363 signature handling and the SPIFFE
    prefix check.
 1. `token-issuer/server.go` — the three-token dispatch and the

@@ -34,6 +34,10 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openshell
+        # Document services fetch the issuer's access-token JWKS on 8080.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: zt-demo
       ports:
         - port: 8080
           protocol: TCP

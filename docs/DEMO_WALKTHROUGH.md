@@ -228,9 +228,9 @@ Subject token claims:
 | `demo_token_use` | `user_subject`, the exchange branch discriminator |
 | `exp` | 30 minutes; scenarios mint a fresh token each run |
 
-The demo signs with HS256 and one shared `ACCESS_TOKEN_SECRET`. That is a
-shortcut: production subject tokens would be asymmetric and verified
-against the customer IdP's JWKS.
+The demo signs with ES256 and publishes the verification keys at
+`/.well-known/jwks.json`; the document services verify against that
+JWKS and never hold signing material.
 
 ## The three access decisions
 

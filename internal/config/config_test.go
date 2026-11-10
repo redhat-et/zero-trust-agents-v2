@@ -24,7 +24,6 @@ func writeTemp(t *testing.T, content string) string {
 }
 
 func TestLoadReturnsUsers(t *testing.T) {
-	t.Setenv("ACCESS_TOKEN_SECRET", "s3cret")
 	cfg, err := Load(writeTemp(t, testYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +41,6 @@ func TestLoadReturnsUsers(t *testing.T) {
 }
 
 func TestLoadDefaults(t *testing.T) {
-	t.Setenv("ACCESS_TOKEN_SECRET", "s3cret")
 	cfg, err := Load(writeTemp(t, testYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +53,7 @@ func TestLoadDefaults(t *testing.T) {
 		"SVIDAudience":     "http://token-issuer.zt-demo.svc",
 		"TokenIssuer":      "http://token-issuer.zt-demo.svc",
 		"ListenAddr":       ":8080",
+		"SigningKeyFile":   "/etc/zt2/access-token-signing-key.pem",
 	}
 	got := map[string]string{
 		"GatewayPrefix":    cfg.GatewayPrefix,
@@ -64,6 +63,7 @@ func TestLoadDefaults(t *testing.T) {
 		"SVIDAudience":     cfg.SVIDAudience,
 		"TokenIssuer":      cfg.TokenIssuer,
 		"ListenAddr":       cfg.ListenAddr,
+		"SigningKeyFile":   cfg.SigningKeyFile,
 	}
 	for k, w := range want {
 		if got[k] != w {
@@ -73,7 +73,6 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadEnvOverrides(t *testing.T) {
-	t.Setenv("ACCESS_TOKEN_SECRET", "s3cret")
 	t.Setenv("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://other/gateway/")
 	t.Setenv("SUPERVISOR_TRUST_DOMAIN_PREFIX", "spiffe://other/sandbox/")
 	t.Setenv("SPIRE_ISSUER", "http://other:9999")
@@ -108,7 +107,6 @@ func TestLoadEnvOverrides(t *testing.T) {
 }
 
 func TestLoadJWKSURIOverride(t *testing.T) {
-	t.Setenv("ACCESS_TOKEN_SECRET", "s3cret")
 	t.Setenv("SPIRE_JWKS_URI", "http://explicit/keys")
 	cfg, err := Load(writeTemp(t, testYAML))
 	if err != nil {
@@ -119,9 +117,23 @@ func TestLoadJWKSURIOverride(t *testing.T) {
 	}
 }
 
-func TestLoadMissingSecret(t *testing.T) {
-	t.Setenv("ACCESS_TOKEN_SECRET", "")
-	if _, err := Load(writeTemp(t, testYAML)); err == nil {
-		t.Fatal("want error for missing ACCESS_TOKEN_SECRET")
+func TestLoadSigningKeyDefault(t *testing.T) {
+	cfg, err := Load(writeTemp(t, testYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SigningKeyFile != "/etc/zt2/access-token-signing-key.pem" {
+		t.Errorf("signing key path: %q", cfg.SigningKeyFile)
+	}
+}
+
+func TestLoadSigningKeyOverride(t *testing.T) {
+	t.Setenv("ACCESS_TOKEN_SIGNING_KEY_FILE", "/tmp/other.pem")
+	cfg, err := Load(writeTemp(t, testYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SigningKeyFile != "/tmp/other.pem" {
+		t.Errorf("signing key path: %q", cfg.SigningKeyFile)
 	}
 }
