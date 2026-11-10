@@ -43,10 +43,10 @@ type jwksVerifier struct {
 	spireIssuer string
 	svidAud     string
 
-	mu       sync.Mutex
-	cached   *jwksDoc
-	fetched  time.Time
-	client   *http.Client
+	mu      sync.Mutex
+	cached  *jwksDoc
+	fetched time.Time
+	client  *http.Client
 
 	// caPath is the trust bundle backing the client's RootCAs. SPIRE
 	// rotates its self-signed root CA (~24h TTL) and spiffe-helper
