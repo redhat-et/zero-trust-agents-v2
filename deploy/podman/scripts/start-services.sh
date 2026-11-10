@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Start the token issuer and per-department document services on the
-# shared podman network. One ACCESS_TOKEN_SECRET is generated (upstream
-# demo.sh pattern) and shared by every container.
+# shared podman network. The issuer signs access tokens with an ES256
+# key generated once under STATE_DIR; every verifier fetches the
+# issuer's published JWKS and holds no signing material.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,11 +55,16 @@ publish_flags() {
     fi
 }
 
-ACCESS_TOKEN_SECRET="${ACCESS_TOKEN_SECRET:-$(openssl rand -hex 32)}"
-export ACCESS_TOKEN_SECRET
+ACCESS_TOKEN_JWKS_URL="${TOKEN_ISSUER_BASE_URL}/.well-known/jwks.json"
+SIGNING_KEY_FILE="${SIGNING_KEY_FILE:-$STATE_DIR/access-token-signing-key.pem}"
+mkdir -p "$STATE_DIR"
+if [[ ! -s "$SIGNING_KEY_FILE" ]]; then
+    (umask 077 && openssl genpkey -algorithm EC \
+        -pkeyopt ec_paramgen_curve:P-256 -out "$SIGNING_KEY_FILE")
+fi
+chmod 600 "$SIGNING_KEY_FILE"
 
 ensure_network
-mkdir -p "$STATE_DIR"
 
 cleanup_container "$TOKEN_ISSUER_CONTAINER"
 for dept in "${DOC_DEPTS[@]}"; do
@@ -70,10 +76,12 @@ run podman run -d \
     --name "$TOKEN_ISSUER_CONTAINER" \
     --network "$NETWORK" \
     --network-alias token-issuer.zt-demo.svc \
+    --userns=keep-id:uid=65532,gid=65532 \
     $(publish_flags "$TOKEN_ISSUER_HOST_PORT") \
     -p "127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT}:8090" \
     -v "${REPO_ROOT}/config/users.yaml:/config/users.yaml:ro,z" \
-    -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
+    -v "${SIGNING_KEY_FILE}:/etc/zt2/access-token-signing-key.pem:ro,z" \
+    -e "ACCESS_TOKEN_SIGNING_KEY_FILE=/etc/zt2/access-token-signing-key.pem" \
     -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
     -e "JWT_SVID_AUDIENCE=${TOKEN_ISSUER_BASE_URL}" \
     -e "SPIRE_JWKS_URI=http://spire-oidc:8080/keys" \
@@ -102,7 +110,7 @@ for dept in "${DOC_DEPTS[@]}"; do
         --network "$NETWORK" \
         --network-alias "document-${dept}" \
         $(publish_flags "$port") \
-        -e "ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}" \
+        -e "ACCESS_TOKEN_JWKS_URL=${ACCESS_TOKEN_JWKS_URL}" \
         -e "ACCESS_TOKEN_ISSUER=${TOKEN_ISSUER_BASE_URL}" \
         -e "DEPARTMENT=${dept}" \
         -e "PORT=:8080" \
@@ -130,11 +138,9 @@ else
     fi
 fi
 
-# 0600 on every run: the redirect alone won't tighten an existing file.
-(umask 077 && printf "%s\n" "$ACCESS_TOKEN_SECRET" >"${STATE_DIR}/access-token-secret")
-chmod 600 "${STATE_DIR}/access-token-secret"
 printf "\nDemo services are up.\n"
 printf "  token issuer: http://127.0.0.1:%s (network alias token-issuer.zt-demo.svc)\n" "$TOKEN_ISSUER_HOST_PORT"
 printf "  subject-token mint (loopback only): http://127.0.0.1:%s\n" "$TOKEN_ISSUER_DEMO_HOST_PORT"
 printf "  document services: %s ports 18101-18105 (engineering|finance|admin|hr|public)\n" "$(doc_endpoint_ip)"
-printf "  shared secret written to %s\n" "${STATE_DIR}/access-token-secret"
+printf "  access-token JWKS: %s\n" "$ACCESS_TOKEN_JWKS_URL"
+printf "  signing key: %s\n" "$SIGNING_KEY_FILE"
