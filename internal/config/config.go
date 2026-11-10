@@ -53,6 +53,8 @@ type Config struct {
 	SigningKeyFile   string
 }
 
+// envOr returns the environment value for key, or def when it is unset
+// or empty.
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -92,6 +94,9 @@ func Load(path string) (*Config, error) {
 	}, nil
 }
 
+// loadAgents reads agent audiences from path and rejects the configs
+// that would otherwise misroute silently: empty or duplicate audiences,
+// names that collide with departments, and agents with no scopes.
 func loadAgents(path string) ([]Agent, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

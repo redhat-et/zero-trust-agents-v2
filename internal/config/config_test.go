@@ -19,6 +19,8 @@ agents:
     scopes: [engineering]
 `
 
+// writeFile writes content to name under a fresh temp dir and returns
+// the path.
 func writeFile(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
@@ -28,11 +30,13 @@ func writeFile(t *testing.T, name, content string) string {
 	return path
 }
 
+// writeTemp writes a users fixture and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
 	return writeFile(t, "users.yaml", content)
 }
 
+// writeAgents writes an agents fixture and returns its path.
 func writeAgents(t *testing.T, content string) string {
 	t.Helper()
 	return writeFile(t, "agents.yaml", content)
@@ -49,6 +53,7 @@ func loadTest(t *testing.T) *Config {
 	return cfg
 }
 
+// TestLoadReturnsUsers parses the users file and their departments.
 func TestLoadReturnsUsers(t *testing.T) {
 	cfg := loadTest(t)
 	if len(cfg.Users) != 1 {
@@ -63,6 +68,7 @@ func TestLoadReturnsUsers(t *testing.T) {
 	}
 }
 
+// TestLoadAgents parses agent audiences and their required scopes.
 func TestLoadAgents(t *testing.T) {
 	cfg := loadTest(t)
 	if len(cfg.Agents) != 1 {
@@ -77,6 +83,8 @@ func TestLoadAgents(t *testing.T) {
 	}
 }
 
+// TestLoadAgentsMissingFile fails closed when AGENTS_FILE points nowhere:
+// an absent file must not mean "no agent audiences".
 func TestLoadAgentsMissingFile(t *testing.T) {
 	t.Setenv("AGENTS_FILE", filepath.Join(t.TempDir(), "absent.yaml"))
 	if _, err := Load(writeTemp(t, testYAML)); err == nil {
@@ -84,6 +92,8 @@ func TestLoadAgentsMissingFile(t *testing.T) {
 	}
 }
 
+// TestLoadAgentsDuplicateAudience rejects two agents claiming the same
+// audience, since the later entry would silently shadow the earlier one.
 func TestLoadAgentsDuplicateAudience(t *testing.T) {
 	t.Setenv("AGENTS_FILE", writeAgents(t, `
 agents:
@@ -97,6 +107,9 @@ agents:
 	}
 }
 
+// TestLoadAgentsRejectsDepartmentCollision refuses agent names that
+// shadow a department (including public): the looser department rule
+// would win, leaving the agent's scope list dead config.
 func TestLoadAgentsRejectsDepartmentCollision(t *testing.T) {
 	for _, audience := range []string{"engineering", "public"} {
 		t.Run(audience, func(t *testing.T) {
@@ -112,6 +125,8 @@ agents:
 	}
 }
 
+// TestLoadAgentsMissingScopes rejects an agent that declares no scopes:
+// it could never admit anyone and is almost certainly a typo.
 func TestLoadAgentsMissingScopes(t *testing.T) {
 	t.Setenv("AGENTS_FILE", writeAgents(t, `
 agents:
@@ -123,6 +138,7 @@ agents:
 	}
 }
 
+// TestLoadDefaults pins every unset field to its deployed default.
 func TestLoadDefaults(t *testing.T) {
 	cfg := loadTest(t)
 	want := map[string]string{
@@ -152,6 +168,8 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadEnvOverrides checks each environment override, including the
+// JWKS URI deriving from SPIRE_ISSUER.
 func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	t.Setenv("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://other/gateway/")
@@ -187,6 +205,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 }
 
+// TestLoadJWKSURIOverride lets SPIRE_JWKS_URI win over the derived URI.
 func TestLoadJWKSURIOverride(t *testing.T) {
 	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	t.Setenv("SPIRE_JWKS_URI", "http://explicit/keys")
@@ -199,6 +218,7 @@ func TestLoadJWKSURIOverride(t *testing.T) {
 	}
 }
 
+// TestLoadSigningKeyDefault pins the mounted signing-key path.
 func TestLoadSigningKeyDefault(t *testing.T) {
 	cfg := loadTest(t)
 	if cfg.SigningKeyFile != "/etc/zt2/access-token-signing-key.pem" {
@@ -206,6 +226,7 @@ func TestLoadSigningKeyDefault(t *testing.T) {
 	}
 }
 
+// TestLoadSigningKeyOverride honours ACCESS_TOKEN_SIGNING_KEY_FILE.
 func TestLoadSigningKeyOverride(t *testing.T) {
 	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	t.Setenv("ACCESS_TOKEN_SIGNING_KEY_FILE", "/tmp/other.pem")

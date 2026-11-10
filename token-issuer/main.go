@@ -12,6 +12,8 @@ import (
 	"github.com/redhat-et/zero-trust-agents-v2/internal/tokens"
 )
 
+// main loads config and the access-token signing key, then serves the
+// issuer until the process exits.
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	usersFile := os.Getenv("USERS_FILE")

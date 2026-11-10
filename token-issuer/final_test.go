@@ -183,6 +183,8 @@ func TestFinalExchangePublicAudience(t *testing.T) {
 	}
 }
 
+// TestFinalExchangeWrongTokenType refuses a subject token where an
+// intermediate token is required.
 func TestFinalExchangeWrongTokenType(t *testing.T) {
 	ts := newExchangeServer(t, supervisorJWKS())
 	// Subject token presented where an intermediate is expected.
@@ -192,6 +194,8 @@ func TestFinalExchangeWrongTokenType(t *testing.T) {
 	}
 }
 
+// TestFinalExchangeAgentAudience exchanges for a configured agent
+// audience and mints only the user/agent scope intersection.
 func TestFinalExchangeAgentAudience(t *testing.T) {
 	ts := newExchangeServer(t, supervisorJWKS())
 	status, body := postToken(t, ts, finalForm(t, "alice", "engineering-analyst", "engineering"))
@@ -243,6 +247,8 @@ func TestFinalExchangeAgentAudienceExcessScopeKept(t *testing.T) {
 	}
 }
 
+// TestFinalExchangeHrAnalystAudience covers the second agent audience
+// shipped in the deployment fixtures.
 func TestFinalExchangeHrAnalystAudience(t *testing.T) {
 	ts := newExchangeServer(t, supervisorJWKS())
 	status, body := postToken(t, ts, finalForm(t, "carol", "hr-analyst", "hr"))

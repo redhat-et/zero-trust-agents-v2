@@ -29,6 +29,8 @@ type server struct {
 	demoMux *http.ServeMux
 }
 
+// newServer indexes users and agent scopes up front so the exchange
+// handlers never rescan the config per request.
 func newServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *server {
 	agentScopes := make(map[string][]string, len(cfg.Agents))
 	for _, a := range cfg.Agents {
