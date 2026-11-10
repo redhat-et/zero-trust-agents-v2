@@ -18,7 +18,7 @@ type JWKSVerifier interface {
 
 type server struct {
 	cfg    *config.Config
-	secret string
+	signer *tokens.Signer
 	jwks   JWKSVerifier
 	mux    *http.ServeMux
 	byUser map[string]config.User
@@ -28,10 +28,10 @@ type server struct {
 	demoMux *http.ServeMux
 }
 
-func newServer(cfg *config.Config, jwks JWKSVerifier) *server {
+func newServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *server {
 	s := &server{
 		cfg:     cfg,
-		secret:  os.Getenv("ACCESS_TOKEN_SECRET"),
+		signer:  signer,
 		jwks:    jwks,
 		mux:     http.NewServeMux(),
 		byUser:  make(map[string]config.User),
@@ -41,6 +41,7 @@ func newServer(cfg *config.Config, jwks JWKSVerifier) *server {
 		s.byUser[u.ID] = u
 	}
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /.well-known/jwks.json", s.handleJWKS)
 	s.mux.HandleFunc("POST /token", s.handleToken)
 	s.demoMux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.demoMux.HandleFunc("GET /demo-subject-token", s.handleSubjectToken)
@@ -49,8 +50,8 @@ func newServer(cfg *config.Config, jwks JWKSVerifier) *server {
 
 // NewServer builds the token issuer's main listener: the authenticated
 // /token endpoint, safe to publish beyond loopback.
-func NewServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
-	s := newServer(cfg, jwks)
+func NewServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *http.Server {
+	s := newServer(cfg, jwks, signer)
 	return &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           s.mux,
@@ -63,8 +64,8 @@ func NewServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
 // NewDemoServer builds the loopback-only listener for the
 // unauthenticated demo-subject-token endpoint; the deployment publishes
 // its port on loopback only.
-func NewDemoServer(cfg *config.Config, jwks JWKSVerifier) *http.Server {
-	s := newServer(cfg, jwks)
+func NewDemoServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *http.Server {
+	s := newServer(cfg, jwks, signer)
 	addr := os.Getenv("DEMO_LISTEN_ADDR")
 	if addr == "" {
 		addr = ":8090"
@@ -95,6 +96,19 @@ func (s *server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
+// handleJWKS publishes the access-token verification keys. Public key
+// material, so it sits on the main listener with no authentication.
+func (s *server) handleJWKS(w http.ResponseWriter, _ *http.Request) {
+	raw, err := s.signer.PublicJWKS()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	_, _ = w.Write(raw)
+}
+
 func (s *server) handleSubjectToken(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user")
 	if userID == "" {
@@ -106,7 +120,7 @@ func (s *server) handleSubjectToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown_user"})
 		return
 	}
-	tok, err := tokens.Sign(s.secret, tokens.Claims{
+	tok, err := s.signer.Sign(tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
 		"sub":            user.ID,
 		"aud":            []string{"openshell-gateway", "account"},
@@ -167,7 +181,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, err := tokens.Verify(s.secret, subjectToken)
+	claims, err := s.signer.Verify(subjectToken)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_subject_token"})
 		return
@@ -205,7 +219,7 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_intermediate_audience", "audience": audience})
 		return
 	}
-	tok, err := tokens.Sign(s.secret, tokens.Claims{
+	tok, err := s.signer.Sign(tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
 		"sub":            userClaims.String("sub"),
 		"aud":            []string{audience},
@@ -266,7 +280,7 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tok, err := tokens.Sign(s.secret, tokens.Claims{
+	tok, err := s.signer.Sign(tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
 		"sub":            user.ID,
 		"aud":            []string{audience, "account"},

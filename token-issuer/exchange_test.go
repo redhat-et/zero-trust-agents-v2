@@ -49,7 +49,7 @@ const (
 func newExchangeServer(t *testing.T, jwks JWKSVerifier) *httptest.Server {
 	t.Helper()
 	cfg := newTestConfig(t)
-	s := NewServer(cfg, jwks)
+	s := NewServer(cfg, jwks, testIssuerSigner)
 	ts := httptest.NewServer(s.Handler)
 	t.Cleanup(ts.Close)
 	return ts
@@ -57,7 +57,7 @@ func newExchangeServer(t *testing.T, jwks JWKSVerifier) *httptest.Server {
 
 func subjectToken(t *testing.T, user string) string {
 	t.Helper()
-	tok, err := tokens.Sign(secret, tokens.Claims{
+	tok, err := testIssuerSigner.Sign(tokens.Claims{
 		"iss":            "http://token-issuer.zt-demo.svc",
 		"sub":            user,
 		"aud":            []string{"openshell-gateway", "account"},
@@ -75,7 +75,7 @@ func subjectToken(t *testing.T, user string) string {
 
 func intermediateToken(t *testing.T, user string, aud string) string {
 	t.Helper()
-	tok, err := tokens.Sign(secret, tokens.Claims{
+	tok, err := testIssuerSigner.Sign(tokens.Claims{
 		"iss":            "http://token-issuer.zt-demo.svc",
 		"sub":            user,
 		"aud":            aud,
@@ -132,7 +132,7 @@ func TestIntermediateExchangeHappyPath(t *testing.T) {
 	if tok == "" {
 		t.Fatal("no access_token")
 	}
-	claims, err := tokens.Verify(secret, tok)
+	claims, err := testIssuerSigner.Verify(tok)
 	if err != nil {
 		t.Fatalf("intermediate does not verify: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestIntermediateExchangeInvalidSubjectToken(t *testing.T) {
 func TestIntermediateExchangeExpiredSubjectToken(t *testing.T) {
 	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
-	tok, err := tokens.Sign(secret, tokens.Claims{
+	tok, err := testIssuerSigner.Sign(tokens.Claims{
 		"iss": "http://token-issuer.zt-demo.svc", "sub": "alice",
 		"demo_token_use": tokens.UseUserSubject,
 		"iat":            time.Now().Add(-time.Hour).Unix(),
@@ -196,7 +196,7 @@ func TestIntermediateExchangeWrongTokenType(t *testing.T) {
 func TestIntermediateExchangeUnknownTokenUse(t *testing.T) {
 	jwks := fakeGatewayJWKS()
 	ts := newExchangeServer(t, jwks)
-	tok, err := tokens.Sign(secret, tokens.Claims{
+	tok, err := testIssuerSigner.Sign(tokens.Claims{
 		"iss": "http://token-issuer.zt-demo.svc", "sub": "alice",
 		"demo_token_use": "banana",
 		"exp":            time.Now().Add(time.Minute).Unix(),

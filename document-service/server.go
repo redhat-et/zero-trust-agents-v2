@@ -10,7 +10,7 @@ import (
 )
 
 type docServer struct {
-	secret     string
+	verifier   *tokens.JWKSVerifier
 	issuer     string
 	department string
 	docs       []*Document
@@ -21,9 +21,9 @@ type docServer struct {
 // NewServer builds the document service for one department. The token's
 // aud must name the department (audience = target service) and its scope
 // must cover each document's required department (scope = capability).
-func NewServer(secret, issuer, department string, docs []*Document) *http.Server {
+func NewServer(jwksURL, issuer, department string, docs []*Document) *http.Server {
 	s := &docServer{
-		secret:     secret,
+		verifier:   tokens.NewJWKSVerifier(jwksURL),
 		issuer:     issuer,
 		department: department,
 		docs:       docs,
@@ -63,7 +63,7 @@ func (s *docServer) authenticate(r *http.Request) (tokens.Claims, string) {
 	if !strings.HasPrefix(auth, "Bearer ") {
 		return nil, "missing_token"
 	}
-	claims, err := tokens.Verify(s.secret, strings.TrimPrefix(auth, "Bearer "))
+	claims, err := s.verifier.Verify(strings.TrimPrefix(auth, "Bearer "))
 	if err != nil || claims.String("demo_token_use") != tokens.UseFinal {
 		return nil, "invalid_token"
 	}

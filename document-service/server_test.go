@@ -1,9 +1,13 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,12 +15,45 @@ import (
 	"github.com/redhat-et/zero-trust-agents-v2/internal/tokens"
 )
 
-const docSecret = "doc-test-secret"
 const docIssuer = "http://token-issuer.zt-demo.svc"
+
+// docSigner plays the issuer; docJWKSURL is its published key set. The
+// document service holds no signing material, only the URL.
+var (
+	docSigner  = mustDocSigner()
+	docJWKSURL string
+)
+
+func mustDocSigner() *tokens.Signer {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	s, err := tokens.NewSigner(key)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func TestMain(m *testing.M) {
+	raw, err := docSigner.PublicJWKS()
+	if err != nil {
+		panic(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	}))
+	docJWKSURL = ts.URL
+	code := m.Run()
+	ts.Close()
+	os.Exit(code)
+}
 
 func finalToken(t *testing.T, user, audience string, scopes ...string) string {
 	t.Helper()
-	tok, err := tokens.Sign(docSecret, tokens.Claims{
+	tok, err := docSigner.Sign(tokens.Claims{
 		"iss":            docIssuer,
 		"sub":            user,
 		"aud":            []string{audience, "account"},
@@ -35,7 +72,7 @@ func finalToken(t *testing.T, user, audience string, scopes ...string) string {
 
 func newDocServer(t *testing.T, department string) *httptest.Server {
 	t.Helper()
-	srv := NewServer(docSecret, docIssuer, department, Documents(department))
+	srv := NewServer(docJWKSURL, docIssuer, department, Documents(department))
 	ts := httptest.NewServer(srv.Handler)
 	t.Cleanup(ts.Close)
 	return ts
@@ -166,7 +203,7 @@ func TestPublicDocumentStillRequiresToken(t *testing.T) {
 
 func TestIntermediateTokenRejected(t *testing.T) {
 	ts := newDocServer(t, "engineering")
-	tok, err := tokens.Sign(docSecret, tokens.Claims{
+	tok, err := docSigner.Sign(tokens.Claims{
 		"iss": docIssuer, "sub": "alice", "aud": "engineering",
 		"scope": "engineering", "demo_token_use": tokens.UseIntermediate,
 		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix(),
@@ -193,5 +230,22 @@ func TestUnknownDocument(t *testing.T) {
 	status, body := get(t, ts, "/documents/DOC-999", finalToken(t, "alice", "engineering", "engineering"))
 	if status != http.StatusNotFound {
 		t.Fatalf("want 404, got %d: %v", status, body)
+	}
+}
+
+func TestTokenFromAnotherKeyRejected(t *testing.T) {
+	ts := newDocServer(t, "engineering")
+	other := mustDocSigner()
+	tok, err := other.Sign(tokens.Claims{
+		"iss": docIssuer, "sub": "alice", "aud": "engineering",
+		"scope": "engineering", "demo_token_use": tokens.UseFinal,
+		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, body := get(t, ts, "/documents", tok)
+	if status != http.StatusUnauthorized || body["error"] != "invalid_token" {
+		t.Fatalf("want 401 invalid_token, got %d %v", status, body)
 	}
 }

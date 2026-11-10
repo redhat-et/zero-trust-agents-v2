@@ -11,9 +11,9 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	secret := os.Getenv("ACCESS_TOKEN_SECRET")
-	if secret == "" {
-		logger.Error("ACCESS_TOKEN_SECRET is required")
+	jwksURL := os.Getenv("ACCESS_TOKEN_JWKS_URL")
+	if jwksURL == "" {
+		logger.Error("ACCESS_TOKEN_JWKS_URL is required")
 		os.Exit(1)
 	}
 	issuer := os.Getenv("ACCESS_TOKEN_ISSUER")
@@ -29,7 +29,7 @@ func main() {
 	if addr == "" {
 		addr = ":8080"
 	}
-	srv := NewServer(secret, issuer, department, Documents(department))
+	srv := NewServer(jwksURL, issuer, department, Documents(department))
 	srv.Addr = addr
 	logger.Info("document service listening", "addr", addr, "department", department)
 	if err := srv.ListenAndServe(); err != nil {
