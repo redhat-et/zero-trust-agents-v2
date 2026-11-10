@@ -1,0 +1,50 @@
+# Agent C (Carol's hr analyst, scenario 14): the negative peer that
+# receives an engineering-analyst-audience token replayed against it.
+# Endpoints: the hr document service plus the issuer JWKS host, the same
+# two B needs.
+# Capabilities are profile-configured, never sandbox-chosen.
+id: zt2-carol-hr-analyst-v2
+display_name: Zero Trust v2 - Carol (hr analyst)
+description: Carol's hr-analyst agent fetching hr documents and verifying inbound tokens
+category: other
+credentials:
+  - name: subject_token
+    description: Carol's subject token stored for gateway-side token exchange only
+    required: true
+  - name: access_token
+    description: Access token obtained via RFC 8693 token exchange
+    required: false
+    auth_style: bearer
+    header_name: Authorization
+    token_grant:
+      grant_type: token_exchange
+      token_endpoint: http://token-issuer.zt-demo.svc:8080/token
+      audience: hr
+      jwt_svid_audience: http://token-issuer.zt-demo.svc:8080
+      client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-spiffe
+      scopes: [hr]
+      cache_ttl_seconds: 60
+      subject_token:
+        source: provider_credential
+        credential: subject_token
+        subject_token_type: urn:ietf:params:oauth:token-type:access_token
+      audience_overrides:
+        - host: @DOC_HOST@
+          port: @DOC_PORT@
+          audience: hr
+          scopes: [hr]
+endpoints:
+  - host: @DOC_HOST@
+    port: @DOC_PORT@
+    @ALLOWED_IPS@
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: @ISSUER_HOST@
+    port: @ISSUER_PORT@
+    @ALLOWED_IPS@
+    protocol: rest
+    access: read-only
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/docsclaw

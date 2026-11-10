@@ -1,0 +1,17 @@
+{
+  "name": "doc-assistant",
+  "description": "Alice's document assistant, able to consult peer agents over A2A",
+  "version": "0.1.0",
+  "skills": [
+    {
+      "id": "document-assistance",
+      "name": "Document assistance",
+      "description": "Fetch documents and consult peer agents to answer questions about them",
+      "tags": ["documents", "a2a", "assistant"],
+      "examples": ["Ask the engineering analyst to review DOC-001"]
+    }
+  ],
+  "capabilities": {},
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"]
+}

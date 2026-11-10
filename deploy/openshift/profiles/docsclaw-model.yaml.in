@@ -1,0 +1,23 @@
+# DocsClaw model endpoint (Stage A prerequisite for the A2A scenarios).
+# The key lives in the provider under the profile's env var name; the
+# sandbox only ever sees the supervisor's placeholder.
+id: docsclaw-model
+display_name: DocsClaw model
+description: MaaS endpoint used by the DocsClaw agents
+category: inference
+credentials:
+  - name: api_key
+    description: MaaS API key
+    env_vars: [LLM_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+endpoints:
+  - host: @MODEL_HOST@
+    port: @MODEL_PORT@
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/docsclaw
+inference_capable: true

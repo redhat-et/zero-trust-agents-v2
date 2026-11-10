@@ -23,6 +23,29 @@ OS=(openshell --gateway zt2 --gateway-endpoint "https://$ZT2_GATEWAY_ROUTE")
 ENGINEERING_URL="http://document-engineering.zt-demo.svc.cluster.local:8080"
 HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.16.0-SNAPSHOT-49026ef-openshell-amd64}"
+# The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
+# resolver has no search domains.
+ISSUER_EGRESS_HOST="token-issuer.zt-demo.svc.cluster.local"
+# Agent-to-agent reach. Unexercised: the ROSA cluster was unreachable
+# when B3 ran, so this is the in-cluster gateway Service and remains a
+# recorded gap (see the B3 run log), not a verified value.
+A2A_HOST="${ZT2_A2A_HOST:-openshell.openshell.svc.cluster.local}"
+A2A_PORT="${ZT2_A2A_PORT:-8080}"
+A2A_HR_PORT="$A2A_PORT"
+
+# start_relay/stop_relay — Kubernetes sandboxes have a routable address,
+# so there is no host relay to run.
+start_relay() { :; }
+stop_relay() { :; }
+
+# Document endpoint and peer URL as an agent config names them.
+doc_host() { printf 'document-%s.zt-demo.svc.cluster.local\n' "$1"; }
+doc_port() { echo 8080; }
+allowed_ips_line() { printf '# in-cluster destinations need no address allowlist'; }
+jwks_url() { printf 'http://%s:8080/.well-known/jwks.json\n' "$ISSUER_EGRESS_HOST"; }
+peer_url() { printf 'http://%s:%s/\n' "$1" "$2"; }
+
 # Host-side URLs via lazily-started oc port-forwards. PIDs are recorded
 # for teardown; the minter forward belongs to setup.sh and is only
 # adopted here.

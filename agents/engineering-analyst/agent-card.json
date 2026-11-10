@@ -1,0 +1,17 @@
+{
+  "name": "engineering-analyst",
+  "description": "Reads engineering documents and answers questions about them",
+  "version": "0.1.0",
+  "skills": [
+    {
+      "id": "engineering-analysis",
+      "name": "Engineering document analysis",
+      "description": "Fetch an engineering document and summarize the parts that answer the caller's question",
+      "tags": ["engineering", "documents", "analysis"],
+      "examples": ["Review DOC-001 and summarize the release risks"]
+    }
+  ],
+  "capabilities": {},
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"]
+}

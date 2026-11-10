@@ -18,6 +18,22 @@ fi
 OS=(openshell --gateway zt2 --gateway-endpoint http://127.0.0.1:18083)
 # shellcheck source=../../deploy/podman/spire/common.sh
 source "$ROOT/deploy/podman/spire/common.sh"
+
+# Agent (DocsClaw) sandboxes run the derived image; the model endpoint is
+# a host-published MaaS host reached through its own provider profile.
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-localhost/docsclaw:dev-openshell}"
+# The issuer as a sandbox reaches it: the published host port through
+# nip.io, never the .svc alias (the supervisor's resolver cannot map it).
+ISSUER_EGRESS_HOST="$(doc_endpoint_host)"
+
+# Agent-to-agent reach. The gateway's exposed-service URL
+# (<workspace>--<sandbox>--<service>.openshell.localhost) resolves to
+# loopback inside the podman VM, which the supervisor refuses as an
+# upstream destination, so A reaches B through a host-published relay
+# (openshell forward service) on a fixed port instead. See the B3 run log.
+A2A_HOST="$ISSUER_EGRESS_HOST"
+A2A_PORT="${ZT2_A2A_PORT:-18800}"
+A2A_HR_PORT="${ZT2_A2A_HR_PORT:-18810}"
 ENGINEERING_URL="http://$(doc_endpoint_host engineering):$(doc_endpoint_port engineering)"
 HR_URL="http://$(doc_endpoint_host hr):$(doc_endpoint_port hr)"
 # Host-side URLs: the services are published on loopback only
@@ -30,6 +46,22 @@ ISSUER_LOCAL="http://127.0.0.1:8080"
 # The unauthenticated subject-token minter is served on the issuer's
 # loopback-only listener (see start-services.sh).
 DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}"
+
+# Document endpoint as an agent config names it. The scenario scripts go
+# through these so the two drivers differ only in their values.
+doc_host() { doc_endpoint_host "$1"; }
+doc_port() { doc_endpoint_port "$1"; }
+
+# allowed_ips_line — the profile template token for a destination's
+# address allowlist. Sandboxes deny RFC 1918 destinations unless the
+# resolved address is named.
+allowed_ips_line() { printf 'allowed_ips: [%s]' "$(doc_endpoint_ip)"; }
+
+# jwks_url — the issuer's JWKS as a sandbox reaches it.
+jwks_url() { printf 'http://%s:8080/.well-known/jwks.json\n' "$ISSUER_EGRESS_HOST"; }
+
+# peer_url HOST PORT — the URL an agent calls a peer at.
+peer_url() { printf 'http://%s:%s/\n' "$1" "$2"; }
 
 pre_create_cleanup() {
     podman ps -a --filter "name=$1" -q | xargs -r podman rm -f >/dev/null 2>&1 || true
@@ -47,6 +79,50 @@ register_sandbox() {
     # racing entry registration fails every later retry too. (Gating on
     # fetch_svid is not an option — see its comment.)
     sleep 3
+}
+
+# stop_relay NAME — stop the host relay for agent sandbox NAME.
+stop_relay() {
+    local name="$1"
+    local pidfile="$STATE_DIR/relay-$name.pid"
+    [[ -f "$pidfile" ]] || return 0
+    local pid
+    pid="$(cat "$pidfile")"
+    # A reused PID must not be signalled: check it is still our relay.
+    if kill -0 "$pid" 2>/dev/null &&
+        ps -p "$pid" -o command= | grep -q "forward service $name"; then
+        kill "$pid" >/dev/null 2>&1 || true
+    fi
+    rm -f "$pidfile"
+}
+
+# start_relay NAME TARGET_PORT LOCAL_PORT — publish an agent sandbox's
+# port on the host so other sandboxes can reach it through the
+# supervisor. Waits until the relay accepts a TCP connection.
+start_relay() {
+    local name="$1" target="$2" local_port="$3"
+    local pidfile="$STATE_DIR/relay-$name.pid"
+    stop_relay "$name"
+    nohup "${OS[@]}" forward service "$name" --target-port "$target" \
+        --local "127.0.0.1:$local_port" \
+        >"$STATE_DIR/relay-$name.log" 2>&1 &
+    echo $! >"$pidfile"
+    # Readiness comes from the relay's own log, never from opening a probe
+    # connection: the relay serves one stream per client, and a probe that
+    # the sandbox side refuses can leave the first real request wedged.
+    for _ in $(seq 1 20); do
+        if grep -q "Forwarding" "$STATE_DIR/relay-$name.log" 2>/dev/null; then
+            return 0
+        fi
+        if ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    printf "relay %s (%s) did not start on %s\n" \
+        "$name" "$target" "$local_port" >&2
+    cat "$STATE_DIR/relay-$name.log" >&2 || true
+    return 1
 }
 
 # supervisor_logs ID — print the supervisor container's logs for sandbox
