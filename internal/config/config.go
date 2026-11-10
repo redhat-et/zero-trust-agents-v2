@@ -33,6 +33,13 @@ type agentsFile struct {
 	Agents []Agent `yaml:"agents"`
 }
 
+// DepartmentAudiences are the built-in department audiences. Agent
+// audiences must not reuse these names: the department rule is looser,
+// so a collision would silently make the agent's scope list dead config.
+var DepartmentAudiences = map[string]bool{
+	"engineering": true, "finance": true, "admin": true, "hr": true, "public": true,
+}
+
 type Config struct {
 	Users            []User
 	Agents           []Agent
@@ -98,6 +105,9 @@ func loadAgents(path string) ([]Agent, error) {
 	for _, a := range af.Agents {
 		if a.Audience == "" {
 			return nil, errors.New("agents file: audience is required")
+		}
+		if DepartmentAudiences[a.Audience] {
+			return nil, fmt.Errorf("agents file: audience %q collides with a department audience", a.Audience)
 		}
 		if len(a.Scopes) == 0 {
 			return nil, fmt.Errorf("agents file: %s declares no scopes", a.Audience)

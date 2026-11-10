@@ -31,7 +31,7 @@ func mustTestSigner() *tokens.Signer {
 }
 
 func newTestConfig(t *testing.T) *config.Config {
-	t.Setenv("AGENTS_FILE", "../config/agents.yaml")
+	t.Setenv("AGENTS_FILE", "testdata/agents.yaml")
 	cfg, err := config.Load("../config/users.yaml")
 	if err != nil {
 		t.Fatal(err)

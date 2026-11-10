@@ -97,6 +97,21 @@ agents:
 	}
 }
 
+func TestLoadAgentsRejectsDepartmentCollision(t *testing.T) {
+	for _, audience := range []string{"engineering", "public"} {
+		t.Run(audience, func(t *testing.T) {
+			t.Setenv("AGENTS_FILE", writeAgents(t, `
+agents:
+  - audience: `+audience+`
+    scopes: [engineering]
+`))
+			if _, err := Load(writeTemp(t, testYAML)); err == nil {
+				t.Fatalf("want error for agent audience %q colliding with a department", audience)
+			}
+		})
+	}
+}
+
 func TestLoadAgentsMissingScopes(t *testing.T) {
 	t.Setenv("AGENTS_FILE", writeAgents(t, `
 agents:
