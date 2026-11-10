@@ -23,6 +23,7 @@ func main() {
 		logger.Error("load config", "err", err)
 		os.Exit(1)
 	}
+	logger.Info("agent audiences loaded", "count", len(cfg.Agents))
 	signer, err := tokens.NewSignerFromFile(cfg.SigningKeyFile)
 	if err != nil {
 		logger.Error("load signing key", "err", err)

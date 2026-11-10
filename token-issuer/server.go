@@ -247,19 +247,47 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 	})
 }
 
-var departmentAudiences = map[string]bool{
-	"engineering": true, "finance": true, "admin": true, "hr": true, "public": true,
+type audienceKind int
+
+const (
+	audienceDepartment audienceKind = iota
+	audienceAgent
+	audiencePublic
+)
+
+// audienceRule is the admission rule for one audience. The kind is
+// explicit so an empty scope list can never be mistaken for the
+// department rule.
+type audienceRule struct {
+	kind   audienceKind
+	scopes []string
 }
 
-// audienceScopes reports whether audience is accepted and, for an agent
-// audience, the scopes it requires. Department audiences return nil:
-// any non-empty intersection is enough, as before.
-func (s *server) audienceScopes(audience string) ([]string, bool) {
-	if departmentAudiences[audience] {
-		return nil, true
+// allows reports whether the minted intersection satisfies the rule.
+func (r audienceRule) allows(intersection []string) bool {
+	switch r.kind {
+	case audiencePublic:
+		return true
+	case audienceAgent:
+		return len(intersect(r.scopes, intersection)) > 0
+	default:
+		return len(intersection) > 0
+	}
+}
+
+// audienceRuleFor reports whether audience is accepted and its rule.
+func (s *server) audienceRuleFor(audience string) (audienceRule, bool) {
+	if audience == "public" {
+		return audienceRule{kind: audiencePublic}, true
+	}
+	if config.DepartmentAudiences[audience] {
+		return audienceRule{kind: audienceDepartment}, true
 	}
 	scopes, ok := s.agentScopes[audience]
-	return scopes, ok
+	if !ok {
+		return audienceRule{}, false
+	}
+	return audienceRule{kind: audienceAgent, scopes: scopes}, true
 }
 
 const finalTTL = 300
@@ -275,7 +303,7 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 	audience := r.Form.Get("audience")
-	required, supported := s.audienceScopes(audience)
+	rule, supported := s.audienceRuleFor(audience)
 	if !supported {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_audience", "audience": audience})
 		return
@@ -289,12 +317,9 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 	}
 	requested := strings.Fields(r.Form.Get("scope"))
 	intersection := intersect(user.Departments, requested)
-	// The public service requires no department scope. Department
-	// audiences demand any non-empty intersection; agent audiences
-	// demand that the intersection covers at least one scope they
-	// require. The minted scope is never narrowed beyond the
-	// intersection.
-	if audience != "public" && !coversAny(intersection, required) {
+	// The rule decides what the intersection must contain. The minted
+	// scope is never narrowed beyond the intersection itself.
+	if !rule.allows(intersection) {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error": "insufficient_department_permissions",
 		})
@@ -322,25 +347,6 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		"expires_in":   finalTTL,
 		"scope":        strings.Join(intersection, " "),
 	})
-}
-
-// coversAny reports whether intersection has at least one scope when
-// required is nil (department behavior), or shares a scope with
-// required otherwise.
-func coversAny(intersection, required []string) bool {
-	if required == nil {
-		return len(intersection) > 0
-	}
-	set := make(map[string]bool, len(required))
-	for _, r := range required {
-		set[r] = true
-	}
-	for _, s := range intersection {
-		if set[s] {
-			return true
-		}
-	}
-	return false
 }
 
 func intersect(departments, requested []string) []string {

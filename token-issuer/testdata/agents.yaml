@@ -1,0 +1,6 @@
+# Test fixture: the issuer tests must not depend on the deploy config.
+agents:
+  - audience: engineering-analyst
+    scopes: [engineering]
+  - audience: hr-analyst
+    scopes: [hr]
