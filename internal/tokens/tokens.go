@@ -181,7 +181,11 @@ func (s *Signer) Sign(claims Claims) (string, error) {
 // Verify checks a token against the signer's own public key. The issuer
 // uses this for its subject tokens so it never calls its own JWKS.
 func (s *Signer) Verify(token string) (Claims, error) {
-	return verifyWithTokenKey(token, &s.key.PublicKey)
+	_, claims, sig, input, err := parseChecked(token)
+	if err != nil {
+		return nil, err
+	}
+	return finishVerify(&s.key.PublicKey, claims, sig, input)
 }
 
 // PublicJWKS returns the published key set: public members only.
@@ -195,7 +199,10 @@ func (s *Signer) PublicJWKS() ([]byte, error) {
 	}}})
 }
 
-const jwksCacheTTL = 60 * time.Second
+var (
+	jwksCacheTTL      = 60 * time.Second
+	jwksRetryInterval = 5 * time.Second
+)
 
 // JWKSVerifier verifies tokens against a published key set. It holds no
 // signing material.
@@ -203,9 +210,11 @@ type JWKSVerifier struct {
 	url    string
 	client *http.Client
 
-	mu      sync.Mutex
-	keys    map[string]*ecdsa.PublicKey
-	fetched time.Time
+	mu          sync.Mutex
+	keys        map[string]*ecdsa.PublicKey
+	fetched     time.Time
+	fetching    bool
+	lastFailure time.Time
 }
 
 // NewJWKSVerifier fetches keys from url, cached for 60 seconds.
@@ -219,32 +228,55 @@ func NewJWKSVerifier(url string) *JWKSVerifier {
 
 // Verify checks the token's signature against the key named by its kid.
 func (v *JWKSVerifier) Verify(token string) (Claims, error) {
-	h, _, _, _, err := parseSigned(token)
+	h, claims, sig, input, err := parseChecked(token)
 	if err != nil {
 		return nil, err
-	}
-	if h.Alg != algES256 {
-		return nil, fmt.Errorf("unsupported alg %q", h.Alg)
-	}
-	if h.Kid == "" {
-		return nil, errors.New("token has no kid")
 	}
 	pub, err := v.key(h.Kid)
 	if err != nil {
 		return nil, err
 	}
-	return verifyWithTokenKey(token, pub)
+	return finishVerify(pub, claims, sig, input)
 }
 
+// key returns the public key for kid. At most one fetch is in flight,
+// it happens outside the lock, and a cached key keeps verifying while
+// it runs or while the endpoint is down. A failed fetch is retried no
+// more often than jwksRetryInterval.
 func (v *JWKSVerifier) key(kid string) (*ecdsa.PublicKey, error) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.keys[kid] == nil || time.Since(v.fetched) >= jwksCacheTTL {
-		if err := v.refresh(); err != nil && v.keys[kid] == nil {
-			return nil, err
-		}
-	}
 	pub := v.keys[kid]
+	if pub != nil && time.Since(v.fetched) < jwksCacheTTL {
+		v.mu.Unlock()
+		return pub, nil
+	}
+	if v.fetching || time.Since(v.lastFailure) < jwksRetryInterval {
+		fetching := v.fetching
+		v.mu.Unlock()
+		if pub != nil {
+			return pub, nil
+		}
+		if fetching {
+			return nil, fmt.Errorf("jwks: fetch in progress for kid %q", kid)
+		}
+		return nil, fmt.Errorf("jwks: no key for kid %q after a failed fetch", kid)
+	}
+	v.fetching = true
+	v.mu.Unlock()
+
+	err := v.refresh() // network I/O must not hold the lock
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.fetching = false
+	if err != nil {
+		v.lastFailure = time.Now()
+		if cached := v.keys[kid]; cached != nil {
+			return cached, nil
+		}
+		return nil, err
+	}
+	pub = v.keys[kid]
 	if pub == nil {
 		return nil, fmt.Errorf("unknown kid %q", kid)
 	}
@@ -275,27 +307,36 @@ func (v *JWKSVerifier) refresh() error {
 		}
 		keys[k.Kid] = pub
 	}
+	v.mu.Lock()
 	v.keys = keys
 	v.fetched = time.Now()
+	v.mu.Unlock()
 	return nil
 }
 
-func verifyWithTokenKey(token string, pub *ecdsa.PublicKey) (Claims, error) {
+// parseChecked parses a token once and enforces the algorithm and kid
+// guards shared by both verifiers.
+func parseChecked(token string) (header, Claims, []byte, string, error) {
 	h, claims, sig, input, err := parseSigned(token)
 	if err != nil {
-		return nil, err
+		return header{}, nil, nil, "", err
 	}
 	if h.Alg != algES256 {
-		return nil, fmt.Errorf("unsupported alg %q", h.Alg)
+		return header{}, nil, nil, "", fmt.Errorf("unsupported alg %q", h.Alg)
 	}
 	if h.Kid == "" {
-		return nil, errors.New("token has no kid")
+		return header{}, nil, nil, "", errors.New("token has no kid")
 	}
+	return h, claims, sig, input, nil
+}
+
+// finishVerify checks the signature and expiry of an already parsed
+// token. exp is mandatory: a demo whose thesis is short-lived tokens
+// must not accept one that never expires.
+func finishVerify(pub *ecdsa.PublicKey, claims Claims, sig []byte, input string) (Claims, error) {
 	if err := verifyES256(pub, input, sig); err != nil {
 		return nil, err
 	}
-	// exp is mandatory: a demo whose thesis is short-lived tokens must
-	// not accept one that never expires.
 	exp := claims.Int64("exp")
 	if exp == 0 {
 		return nil, errors.New("token has no exp claim")
@@ -381,6 +422,9 @@ func publicKey(k jwk) (*ecdsa.PublicKey, error) {
 	yb, err := b64.DecodeString(k.Y)
 	if err != nil {
 		return nil, fmt.Errorf("decode y: %w", err)
+	}
+	if len(xb) > keySize || len(yb) > keySize {
+		return nil, errors.New("public key coordinate is too long for P-256")
 	}
 	point := make([]byte, 1+2*keySize)
 	point[0] = 4

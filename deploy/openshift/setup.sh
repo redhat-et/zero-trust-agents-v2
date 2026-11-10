@@ -147,11 +147,18 @@ wait_route
 echo "== 4/7 zt-demo services =="
 oc apply -f "$ROOT/deploy/openshift/zt-demo/namespace.yaml"
 gen_signing_key() {
-    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 2>/dev/null
+    local key
+    key="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+    if [[ "$key" != *"BEGIN PRIVATE KEY"* ]]; then
+        printf "openssl could not generate the access-token signing key\n" >&2
+        return 1
+    fi
+    printf '%s\n' "$key"
 }
 if ! oc -n zt-demo get secret zt2-secrets >/dev/null 2>&1; then
+    signing_key="$(gen_signing_key)"
     oc -n zt-demo create secret generic zt2-secrets \
-        --from-literal=access-token-signing-key="$(gen_signing_key)" >/dev/null
+        --from-literal=access-token-signing-key="$signing_key" >/dev/null
 elif ! oc -n zt-demo get secret zt2-secrets \
     -o jsonpath='{.data.access-token-signing-key}' | grep -q .; then
     # A secret from an earlier run carries the retired shared secret but

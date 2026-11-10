@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -241,6 +242,14 @@ func TestNewSignerFromFileMissing(t *testing.T) {
 	}
 }
 
+// withJWKSTimings narrows the cache and retry windows for tests. The
+// verifier is not used concurrently with this helper.
+func withJWKSTimings(ttl, retry time.Duration) func() {
+	oldTTL, oldRetry := jwksCacheTTL, jwksRetryInterval
+	jwksCacheTTL, jwksRetryInterval = ttl, retry
+	return func() { jwksCacheTTL, jwksRetryInterval = oldTTL, oldRetry }
+}
+
 func jwksServer(t *testing.T, s *Signer, hits *int64) *httptest.Server {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -311,5 +320,101 @@ func TestParseWithoutVerification(t *testing.T) {
 	}
 	if got["sub"] != "alice" {
 		t.Fatalf("unexpected sub: %v", got["sub"])
+	}
+}
+
+func TestJWKSVerifierBacksOffAfterFailure(t *testing.T) {
+	var hits int64
+	s := newTestSigner(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer ts.Close()
+
+	defer withJWKSTimings(0, time.Hour)()
+	v := NewJWKSVerifier(ts.URL)
+	tok := signOrFail(t, s, testClaims())
+	if _, err := v.Verify(tok); err == nil {
+		t.Fatal("want an error while the JWKS is down and no key is cached")
+	}
+	for i := 0; i < 3; i++ {
+		_, _ = v.Verify(tok)
+	}
+	if got := atomic.LoadInt64(&hits); got != 1 {
+		t.Errorf("want one fetch inside the retry window, got %d", got)
+	}
+}
+
+func TestJWKSVerifierServesCachedKeyDuringSlowRefresh(t *testing.T) {
+	s := newTestSigner(t)
+	var hits int64
+	var startedOnce, releaseOnce sync.Once
+	started := make(chan struct{})
+	release := make(chan struct{})
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt64(&hits, 1) > 1 {
+			startedOnce.Do(func() { close(started) })
+			<-release
+		}
+		raw, err := s.PublicJWKS()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(raw)
+	}))
+	defer ts.Close()
+	defer unblock()
+
+	defer withJWKSTimings(0, time.Hour)()
+	v := NewJWKSVerifier(ts.URL)
+	tok := signOrFail(t, s, testClaims())
+	if _, err := v.Verify(tok); err != nil {
+		t.Fatal(err)
+	}
+
+	slowDone := make(chan struct{})
+	go func() {
+		_, _ = v.Verify(tok) // triggers the refresh, blocks in the handler
+		close(slowDone)
+	}()
+	<-started
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := v.Verify(tok)
+		result <- err
+	}()
+	blocked := false
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Errorf("a cached key must verify without waiting: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		blocked = true
+	}
+	unblock()
+	<-slowDone
+	if blocked {
+		if err := <-result; err != nil {
+			t.Logf("blocked verify returned: %v", err)
+		}
+		t.Fatal("second verify blocked behind the in-flight refresh")
+	}
+}
+
+func TestPublicKeyRejectsOversizedCoordinate(t *testing.T) {
+	x := make([]byte, keySize+1)
+	x[0] = 1 // numerically larger than a P-256 coordinate
+	_, err := publicKey(jwk{
+		Kty: "EC", Crv: "P-256", Kid: "k",
+		X: b64.EncodeToString(x),
+		Y: b64.EncodeToString(make([]byte, keySize)),
+	})
+	if err == nil {
+		t.Fatal("want an error for a coordinate longer than 32 bytes")
 	}
 }
