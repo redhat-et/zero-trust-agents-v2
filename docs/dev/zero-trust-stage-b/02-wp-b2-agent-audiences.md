@@ -2,7 +2,8 @@
 
 **Plan reference:** §B.2 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** not started.
+**Status:** implemented on `feature/stage-b2-agent-audiences` (stacked
+on B1); Podman evidence recorded below, OpenShift run pending.
 **Branch:** `feature/stage-b2-agent-audiences`.
 
 ## Scope
@@ -130,7 +131,13 @@ authorization policy, agent discovery, profile wiring (B3).
 <!-- markdownlint-disable MD013 -->
 
 | Date | Command | Observed |
-| --- | --- | --- |
-| | | |
+| --- | --- | --- | --- |
+| 2026-11-09 | `make lint test`, `go test -race -count=1 ./...` | `0 issues`; all four packages `ok` |
+| 2026-11-09 | alice → `engineering-analyst`, `scope=engineering` | `200`; `aud=["engineering-analyst","account"]`, `scope="engineering"`, `azp` = the supervisor SVID |
+| 2026-11-09 | alice → `engineering-analyst`, `scope=hr` | `403 insufficient_department_permissions` (empty intersection) |
+| 2026-11-09 | carol → `hr-analyst`, `scope=hr` | `200`; `aud=["hr-analyst","account"]`, `scope="hr"` |
+| 2026-11-09 | carol → `engineering-analyst`, `scope=engineering` | `403 insufficient_department_permissions` |
+| 2026-11-09 | `scripts/scenario1.sh` … `scripts/scenario6.sh` | all six print PASS |
+| — | OpenShift `B2-A6` | not run: no cluster in this session |
 
 <!-- markdownlint-enable MD013 -->
