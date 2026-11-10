@@ -164,6 +164,10 @@ default, which the service proxy cannot reach.
 
 ## Running scenarios 11–15
 
+The numbers follow the integration plan, so scenarios 7–10 (Stage A,
+single-agent DocsClaw) do not exist here; the gap is explained in
+`docs/DEMO_SCENARIOS.md`.
+
 The agent scenarios need a model endpoint. They exit 2 rather than report
 a result they never tested when it is missing.
 
