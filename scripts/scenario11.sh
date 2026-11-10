@@ -30,14 +30,14 @@ register_sandbox "$A_ID" >/dev/null
 echo "  == configs: B's caller allowlist is A's exact SVID =="
 write_agent_config "$ROOT/agents/engineering-analyst" "$STATE_DIR/a2a/b" \
     "$(sandbox_spiffe_id "$A_ID")"
-sandbox_upload eng-analyst "$STATE_DIR/a2a/b/agent" /workspace >/dev/null
+sandbox_upload eng-analyst "$STATE_DIR/a2a/b/agent" "$WORKSPACE_DIR" >/dev/null
 start_docsclaw_serve eng-analyst
 
 PEER_URL="$(peer_url "$A2A_HOST" "$A2A_PORT")"
 HR_PEER_URL="$(peer_url "$A2A_HOST" "$A2A_HR_PORT")"
 write_agent_config "$ROOT/agents/doc-assistant" "$STATE_DIR/a2a/a" "" \
     "$PEER_URL" "$HR_PEER_URL"
-sandbox_upload alice-a2a "$STATE_DIR/a2a/a/agent" /workspace >/dev/null
+sandbox_upload alice-a2a "$STATE_DIR/a2a/a/agent" "$WORKSPACE_DIR" >/dev/null
 
 echo "  == A asks B =="
 if ! sandbox_ask alice-a2a \

@@ -23,7 +23,16 @@ OS=(openshell --gateway zt2 --gateway-endpoint "https://$ZT2_GATEWAY_ROUTE")
 ENGINEERING_URL="http://document-engineering.zt-demo.svc.cluster.local:8080"
 HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 
-AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.16.0-SNAPSHOT-49026ef-openshell-amd64}"
+# The Kubernetes driver mounts the workspace PVC at /sandbox; the image's
+# /workspace is the read-only container rootfs, so uploads and the serve
+# log must target /sandbox (verified 2026-11-10: /sandbox is writable,
+# /workspace returns EACCES).
+WORKSPACE_DIR="/sandbox"
+# A real linux/amd64 build is required: the historical ghcr -openshell-amd64
+# tag was a mislabeled arm64 image (Exec format error on amd64 nodes) and
+# has since been removed from ghcr. Built from ~/work/docsclaw with
+# GOARCH=amd64 against a multi-arch UBI base; repo is public.
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-quay.io/panni/docsclaw:v2-openshell-amd64-r3}"
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
 ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}"
@@ -44,6 +53,21 @@ A2A_HR_PORT="$A2A_PORT"
 # so there is no host relay to run.
 start_relay() { :; }
 stop_relay() { :; }
+
+# service_curl URL [args...] — reach an exposed-service URL from this
+# host. The gateway publishes a *.openshell.localhost authority that
+# nothing resolves, so dial the gateway Route instead and send the
+# service authority as the HTTP Host: the router picks the Route by SNI
+# and the gateway routes by Host. -k because the gateway cert is
+# self-signed and its SAN is the Route host.
+service_curl() {
+    local url="$1" rest authority path
+    shift
+    rest="${url#*://}"
+    authority="${rest%%/*}"
+    if [[ "$rest" == */* ]]; then path="/${rest#*/}"; else path="/"; fi
+    curl -skS -H "Host: $authority" "https://$ZT2_GATEWAY_ROUTE$path" "$@"
+}
 
 # Document endpoint and peer URL as an agent config names them.
 doc_host() { printf 'document-%s.zt-demo.svc.cluster.local\n' "$1"; }

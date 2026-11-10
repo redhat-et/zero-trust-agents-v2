@@ -18,7 +18,7 @@ register_sandbox "$B_ID" >/dev/null
 # is irrelevant here; keep it a prefix rather than inventing an SVID.
 write_agent_config "$ROOT/agents/engineering-analyst" "$STATE_DIR/a2a/b" \
     "spiffe://openshell.local/openshell/sandbox/this-call-has-no-token"
-sandbox_upload eng-analyst "$STATE_DIR/a2a/b/agent" /workspace >/dev/null
+sandbox_upload eng-analyst "$STATE_DIR/a2a/b/agent" "$WORKSPACE_DIR" >/dev/null
 start_docsclaw_serve eng-analyst
 
 URL="$(service_url eng-analyst agent)"
@@ -31,7 +31,7 @@ echo "  service URL: $URL"
 # poll rather than sampling once.
 RESPONSE=""
 for _ in $(seq 1 30); do
-    RESPONSE="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "$URL/health" || true)"
+    RESPONSE="$(service_curl "$URL/health" -m 10 -o /dev/null -w '%{http_code}' || true)"
     if [[ "$RESPONSE" == "200" ]]; then
         break
     fi
@@ -40,12 +40,11 @@ done
 [[ "$RESPONSE" == "200" ]] || fail "the exposed URL is not reachable from this host ($RESPONSE)"
 echo "  the exposed URL is reachable from the laptop (/health 200)"
 
-BODY="$(curl -sS -m 10 -X POST -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"review DOC-001"}],"messageId":"m1","kind":"message"}}}' \
-    "$URL/a2a")"
-STATUS="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' -X POST \
+BODY="$(service_curl "$URL/a2a" -m 10 -X POST -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"review DOC-001"}],"messageId":"m1","kind":"message"}}}')"
+STATUS="$(service_curl "$URL/a2a" -m 10 -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}' "$URL/a2a")"
+    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}')"
 
 if [[ "$STATUS" == "401" && "$BODY" == *missing_token* ]]; then
     pass "B refused the tokenless call with 401 missing_token"

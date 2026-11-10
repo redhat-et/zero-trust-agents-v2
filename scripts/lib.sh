@@ -96,16 +96,17 @@ sandbox_curl() {
 }
 
 # sandbox_upload NAME LOCAL [DEST] — copy a directory into a sandbox.
-# DEST is the PARENT directory: a local agent/ lands as /workspace/agent
-# when DEST is /workspace. --no-git-ignore because the config directory
+# DEST is the PARENT directory: a local agent/ lands as <dest>/agent,
+# and the default destination is the driver's WORKSPACE_DIR.
+# --no-git-ignore because the config directory
 # lives under STATE_DIR, outside any work tree.
 sandbox_upload() {
-    local name="$1" local_path="$2" dest="${3:-/workspace}"
+    local name="$1" local_path="$2" dest="${3:-$WORKSPACE_DIR}"
     "${OS[@]}" sandbox upload --no-git-ignore "$name" "$local_path" "$dest"
 }
 
 # sandbox_ask NAME PROMPT EXPECTED [ATTEMPTS] — run one prompt through
-# the agent config at /workspace/agent, retrying while the SVID
+# the agent config at $WORKSPACE_DIR/agent, retrying while the SVID
 # propagates (the supervisor caches a failed token grant). Stdout is the
 # answer only; the tool trace goes to stderr. Sets SANDBOX_ASK_OUTPUT
 # and SANDBOX_ASK_TRACE.
@@ -114,7 +115,7 @@ sandbox_ask() {
     local output="" trace=""
     for _ in $(seq 1 "$attempts"); do
         if output="$("${OS[@]}" sandbox exec --name "$name" --no-tty -- \
-            docsclaw ask --config-dir /workspace/agent --trace "$prompt" 2>"$STATE_DIR/$name-ask.err")"; then
+            docsclaw ask --config-dir "$WORKSPACE_DIR/agent" --trace "$prompt" 2>"$STATE_DIR/$name-ask.err")"; then
             trace="$(cat "$STATE_DIR/$name-ask.err")"
             if [[ "$output" == *"$expected"* ]]; then
                 SANDBOX_ASK_OUTPUT="$output"
@@ -226,7 +227,7 @@ require_agent_env() {
 
 # agent_log NAME — print an agent's docsclaw log from inside its sandbox.
 agent_log() {
-    "${OS[@]}" sandbox exec --name "$1" --no-tty -- cat /workspace/serve.log
+    "${OS[@]}" sandbox exec --name "$1" --no-tty -- cat "$WORKSPACE_DIR/serve.log"
 }
 
 # agent_provider NAME PROFILE_ID USER — create a provider holding a
@@ -244,8 +245,9 @@ agent_provider() {
 
 # write_agent_config SRC DEST CALLER_SVID [PEER_URL HR_PEER_URL] — copy
 # an agent's prompt and card into DEST/agent and render its
-# agent-config.yaml with the driver's hosts. The config directory is
-# always delivered as /workspace/agent by sandbox_upload.
+# agent-config.yaml with the driver's hosts. DocsClaw reads the agent's
+# workspace from tools.workspace, so @WORKSPACE@ is the driver's
+# WORKSPACE_DIR (the K8s driver mounts the PVC at /sandbox).
 write_agent_config() {
     local src="$1" dest="$2" caller_svid="$3"
     local peer_url_value="${4:-}" hr_peer_url_value="${5:-}"
@@ -258,13 +260,15 @@ write_agent_config() {
     mkdir -p "$dest/agent"
     cp "$src/system-prompt.txt" "$src/agent-card.json" "$dest/agent/"
     if [[ -f "$src/agent-config.a2a.yaml.in" ]]; then
-        sed -e "s|@DOC_HOST@|$(doc_host "$dept")|" \
+        sed -e "s|@WORKSPACE@|$WORKSPACE_DIR|" \
+            -e "s|@DOC_HOST@|$(doc_host "$dept")|" \
             -e "s|@DOC_PORT@|$(doc_port "$dept")|" \
             -e "s|@PEER_URL@|$peer_url_value|" \
             -e "s|@HR_PEER_URL@|$hr_peer_url_value|" \
             "$src/agent-config.a2a.yaml.in" >"$dest/agent/agent-config.yaml"
     else
-        sed -e "s|@DOC_HOST@|$(doc_host "$dept")|" \
+        sed -e "s|@WORKSPACE@|$WORKSPACE_DIR|" \
+            -e "s|@DOC_HOST@|$(doc_host "$dept")|" \
             -e "s|@DOC_PORT@|$(doc_port "$dept")|" \
             -e "s|@JWKS_URL@|$(jwks_url)|" \
             -e "s|@CALLER_SVID@|$caller_svid|" \
@@ -279,12 +283,12 @@ write_agent_config() {
 start_docsclaw_serve() {
     local name="$1" code
     code="$("${OS[@]}" sandbox exec --name "$name" --no-tty -- sh -c \
-        'nohup docsclaw serve --config-dir /workspace/agent --host 0.0.0.0 --port 8000 >/workspace/serve.log 2>&1 & sleep 2; curl -sS -m 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health')" || true
+        "nohup docsclaw serve --config-dir $WORKSPACE_DIR/agent --host 0.0.0.0 --port 8000 >$WORKSPACE_DIR/serve.log 2>&1 & sleep 2; curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health")" || true
     if [[ "$code" != "200" ]]; then
         printf "docsclaw serve did not become healthy in %s (got '%s')\n" \
             "$name" "$code" >&2
         "${OS[@]}" sandbox exec --name "$name" --no-tty -- sh -c \
-            'cat /workspace/serve.log' >&2 || true
+            "cat $WORKSPACE_DIR/serve.log" >&2 || true
         return 1
     fi
 }
@@ -295,7 +299,7 @@ start_docsclaw_serve() {
 wait_for_health() {
     local url="$1" attempts="${2:-30}" code=""
     for _ in $(seq 1 "$attempts"); do
-        code="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "${url%/}/health" || true)"
+        code="$(service_curl "${url%/}/health" -m 5 -o /dev/null -w '%{http_code}' || true)"
         if [[ "$code" == "200" ]]; then
             return 0
         fi

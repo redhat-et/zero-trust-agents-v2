@@ -25,7 +25,7 @@ PEER_URL="$(peer_url "$A2A_HOST" "$A2A_PORT")"
 HR_PEER_URL="$(peer_url "$A2A_HOST" "$A2A_HR_PORT")"
 write_agent_config "$ROOT/agents/doc-assistant" "$STATE_DIR/a2a/a" "" \
     "$PEER_URL" "$HR_PEER_URL"
-sandbox_upload alice-a2a "$STATE_DIR/a2a/a/agent" /workspace >/dev/null
+sandbox_upload alice-a2a "$STATE_DIR/a2a/a/agent" "$WORKSPACE_DIR" >/dev/null
 
 echo "  == A is told to call the hr analyst =="
 sandbox_ask alice-a2a \

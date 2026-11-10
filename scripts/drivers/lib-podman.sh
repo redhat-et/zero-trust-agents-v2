@@ -22,6 +22,9 @@ source "$ROOT/deploy/podman/spire/common.sh"
 # Agent (DocsClaw) sandboxes run the derived image; the model endpoint is
 # a host-published MaaS host reached through its own provider profile.
 AGENT_IMAGE="${DOCSCLAW_IMAGE:-localhost/docsclaw:dev-openshell}"
+# Where agent configs and the serve log live inside a sandbox. Container
+# sandboxes keep the image's writable /workspace.
+WORKSPACE_DIR="/workspace"
 # The issuer as a sandbox reaches it: the published host port through
 # nip.io, never the .svc alias (the supervisor's resolver cannot map it).
 ISSUER_EGRESS_HOST="$(doc_endpoint_host)"
@@ -51,6 +54,12 @@ DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-8090}"
 # through these so the two drivers differ only in their values.
 doc_host() { doc_endpoint_host "$1"; }
 doc_port() { doc_endpoint_port "$1"; }
+
+# service_curl URL [args...] — an exposed-service URL is directly
+# reachable on Podman (plain HTTP to the published gateway port), so
+# this is a plain curl. The OpenShift driver rewrites it through the
+# gateway Route.
+service_curl() { curl "$@"; }
 
 # allowed_ips_line — the profile template token for a destination's
 # address allowlist. Sandboxes deny RFC 1918 destinations unless the
