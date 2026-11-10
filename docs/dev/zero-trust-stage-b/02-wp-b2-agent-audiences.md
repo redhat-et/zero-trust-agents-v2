@@ -2,8 +2,8 @@
 
 **Plan reference:** §B.2 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** PR #12, rebased onto `main`; Podman evidence recorded
-below, OpenShift run pending.
+**Status:** merged in #12 (`033ac8d`); Podman evidence recorded below,
+OpenShift run pending.
 **Branch:** `feature/stage-b2-agent-audiences`.
 
 ## Scope
@@ -140,6 +140,7 @@ authorization policy, agent discovery, profile wiring (B3).
 | 2026-11-09 | `scripts/scenario1.sh` … `scripts/scenario6.sh` | all six print PASS |
 | 2026-11-09 | PR #11 review fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | collision test RED→green; `0 issues`; mint matrix unchanged (200/403/200/403); all six scenarios PASS; issuer logs `agent audiences loaded count=2` |
 | 2026-11-09 | after rebase onto main (#10 merged): `go test -race -count=1 ./...`, `make lint`, rebuilt images, `scenario1..6`, audience matrix | all packages `ok`; `0 issues`; six scenarios PASS; matrix 200/403/200/403; startup log `count=2` |
+| 2026-11-10 | PR #12 doc-comment fixes: `make lint test`, `go test -race ./...` | `0 issues`; all four packages `ok`; squash-merged as #12 (`033ac8d`) |
 | — | OpenShift `B2-A6` | not run: no cluster in this session |
 
 <!-- markdownlint-enable MD013 -->
