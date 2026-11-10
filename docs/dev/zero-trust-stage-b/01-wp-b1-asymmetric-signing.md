@@ -2,7 +2,8 @@
 
 **Plan reference:** §B.1 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** not started.
+**Status:** implemented on `feature/stage-b1-es256-jwks`; Podman
+evidence recorded below, OpenShift run pending.
 **Branch:** `feature/stage-b1-es256-jwks`.
 
 ## Scope
@@ -167,6 +168,12 @@ Record the exact commands and outputs in the run log.
 
 | Date | Command | Observed |
 | --- | --- | --- |
-| | | |
+| 2026-11-09 | `make lint test`, `go test -race -count=1 ./...` | `0 issues`; document-service, internal/config, internal/tokens and token-issuer all `ok` |
+| 2026-11-09 | `curl -fsS http://127.0.0.1:8080/.well-known/jwks.json` | one key: `kty=EC`, `crv=P-256`, `alg=ES256`, `kid=U2yJ0TIcW3xFhVkC3WtrCT7IAtVU-aPLERAsLgX_TmI`; no private members |
+| 2026-11-09 | decode a minted subject token's header | `alg=ES256`, `kid` equal to the JWKS `kid` |
+| 2026-11-09 | valid final token vs the same token with its signature segment replaced, against `127.0.0.1:18101` | valid `200`; tampered `{"error":"invalid_token"}` |
+| 2026-11-09 | `scripts/scenario1.sh` … `scripts/scenario6.sh` | all six print PASS: 1 fetched DOC-001, 2 mint-time 403, 3 `Token grant failed`, 4 carol fetched DOC-004, 5 rogue SVID 401, 6 `403 invalid_audience` |
+| 2026-11-09 | `grep -rn 'ACCESS_TOKEN_SECRET' internal token-issuer document-service deploy scripts config` | only the `access-token-secret":null` cleanup patch in `deploy/openshift/setup.sh` |
+| — | OpenShift B1-A7 | not run: no cluster in this session |
 
 <!-- markdownlint-enable MD013 -->
