@@ -27,9 +27,15 @@ AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.16.0-SNAPSHOT-49026e
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
 ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}"
-# Agent-to-agent reach. Unexercised: the ROSA cluster was unreachable
-# when B3 ran, so this is the in-cluster gateway Service and remains a
-# recorded gap (see the B3 run log), not a verified value.
+# Agent-to-agent reach. Still a recorded gap (see the B3 run log): the
+# 2026-11-10 cluster pass showed this default is wrong twice over. The
+# gateway Service on 8080 is TLS-only (plain HTTP is reset), and the
+# gateway routes exposed services by their HTTP authority, not by the
+# Service DNS name. `service expose` yields an authority such as
+# https://default--<sandbox>--<service>.openshell.localhost/ — no port,
+# no Route host — which is the value the gateway matches. A working
+# A2A endpoint therefore needs a host/port/scheme decision, not just a
+# host swap, so the value stays as-is until the spike is completed.
 A2A_HOST="${ZT2_A2A_HOST:-openshell.openshell.svc.cluster.local}"
 A2A_PORT="${ZT2_A2A_PORT:-8080}"
 A2A_HR_PORT="$A2A_PORT"
@@ -49,12 +55,21 @@ peer_url() { printf 'http://%s:%s/\n' "$1" "$2"; }
 # Host-side URLs via lazily-started oc port-forwards. PIDs are recorded
 # for teardown; the minter forward belongs to setup.sh and is only
 # adopted here.
+#
+# The 191xx block is deliberately disjoint from the Podman driver's
+# host ports (issuer 8080, document services 18101-18105). On a laptop
+# that still runs the Podman demo, sharing 18101/18102 makes the
+# OpenShift scenarios silently reach the Podman services through
+# gvproxy: oc binds IPv6 localhost while gvproxy holds IPv4, so both
+# listeners succeed and curl's 127.0.0.1 hits the wrong stack. Distinct
+# ports, plus --address 127.0.0.1 in ensure_forward, keep the two runs
+# from crossing over.
 DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
-ISSUER_LOCAL_PORT="${ZT2_ISSUER_LOCAL_PORT:-18080}"
+ISSUER_LOCAL_PORT="${ZT2_ISSUER_LOCAL_PORT:-19180}"
 ISSUER_LOCAL="http://127.0.0.1:$ISSUER_LOCAL_PORT"
-ENGINEERING_LOCAL_PORT="${ZT2_ENGINEERING_LOCAL_PORT:-18101}"
+ENGINEERING_LOCAL_PORT="${ZT2_ENGINEERING_LOCAL_PORT:-19101}"
 ENGINEERING_LOCAL="http://127.0.0.1:$ENGINEERING_LOCAL_PORT"
-FINANCE_LOCAL_PORT="${ZT2_FINANCE_LOCAL_PORT:-18102}"
+FINANCE_LOCAL_PORT="${ZT2_FINANCE_LOCAL_PORT:-19102}"
 FINANCE_LOCAL="http://127.0.0.1:$FINANCE_LOCAL_PORT"
 
 # ensure_forward PORT RESOURCE — start a port-forward unless one is
@@ -71,7 +86,7 @@ ensure_forward() {
     if [[ -f "$pidfile" ]]; then
         kill_pidfile "$pidfile"
     fi
-    oc -n zt-demo port-forward "$resource" "${port}:8080" >/dev/null 2>&1 &
+    oc -n zt-demo port-forward --address 127.0.0.1 "$resource" "${port}:8080" >/dev/null 2>&1 &
     echo $! >"$pidfile"
     for _ in $(seq 1 15); do
         curl -fsS --max-time 2 "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1 && return 0
