@@ -191,3 +191,66 @@ func TestFinalExchangeWrongTokenType(t *testing.T) {
 		t.Fatalf("want 401 unsupported_token_use, got %d %v", status, body)
 	}
 }
+
+func TestFinalExchangeAgentAudience(t *testing.T) {
+	ts := newExchangeServer(t, supervisorJWKS())
+	status, body := postToken(t, ts, finalForm(t, "alice", "engineering-analyst", "engineering"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200, got %d: %v", status, body)
+	}
+	claims := decodeFinal(t, body)
+	if !claims.HasAudience("engineering-analyst") || !claims.HasAudience("account") {
+		t.Errorf("aud: %v", claims["aud"])
+	}
+	if claims.String("scope") != "engineering" {
+		t.Errorf("scope: %q", claims.String("scope"))
+	}
+	if claims.String("azp") != supervisorSVIDID {
+		t.Errorf("azp: %v", claims["azp"])
+	}
+}
+
+// Bob holds finance and admin: the intersection with the requested
+// engineering scope is empty, so the agent audience is refused.
+func TestFinalExchangeAgentAudienceNoIntersection(t *testing.T) {
+	ts := newExchangeServer(t, supervisorJWKS())
+	status, body := postToken(t, ts, finalForm(t, "bob", "engineering-analyst", "engineering"))
+	if status != http.StatusForbidden || body["error"] != "insufficient_department_permissions" {
+		t.Fatalf("want 403 insufficient_department_permissions, got %d %v", status, body)
+	}
+}
+
+// A non-empty intersection that does not cover the agent's required
+// scope must still be refused: Bob's finance scope is not engineering.
+func TestFinalExchangeAgentAudienceRequiresItsScope(t *testing.T) {
+	ts := newExchangeServer(t, supervisorJWKS())
+	status, body := postToken(t, ts, finalForm(t, "bob", "engineering-analyst", "finance"))
+	if status != http.StatusForbidden || body["error"] != "insufficient_department_permissions" {
+		t.Fatalf("want 403 insufficient_department_permissions, got %d %v", status, body)
+	}
+}
+
+// Extra scopes are not clipped, matching department behavior. This is
+// a deliberate B2 decision, not an accident.
+func TestFinalExchangeAgentAudienceExcessScopeKept(t *testing.T) {
+	ts := newExchangeServer(t, supervisorJWKS())
+	status, body := postToken(t, ts, finalForm(t, "alice", "engineering-analyst", "engineering", "finance"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200, got %d: %v", status, body)
+	}
+	if claims := decodeFinal(t, body); claims.String("scope") != "engineering finance" {
+		t.Errorf("scope: %q", claims.String("scope"))
+	}
+}
+
+func TestFinalExchangeHrAnalystAudience(t *testing.T) {
+	ts := newExchangeServer(t, supervisorJWKS())
+	status, body := postToken(t, ts, finalForm(t, "carol", "hr-analyst", "hr"))
+	if status != http.StatusOK {
+		t.Fatalf("want 200, got %d: %v", status, body)
+	}
+	claims := decodeFinal(t, body)
+	if !claims.HasAudience("hr-analyst") || claims.String("scope") != "hr" {
+		t.Errorf("aud/scope: %v/%q", claims["aud"], claims.String("scope"))
+	}
+}

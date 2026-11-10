@@ -1,0 +1,9 @@
+# A2A audiences accepted by the supervisor exchange. Each entry names
+# the scope the audience requires; the minted scope is still the user's
+# department intersection, so the token never exceeds what the caller
+# holds. Department audiences stay built into the issuer.
+agents:
+  - audience: engineering-analyst
+    scopes: [engineering]
+  - audience: hr-analyst
+    scopes: [hr]

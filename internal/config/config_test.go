@@ -13,21 +13,44 @@ users:
     departments: [engineering, finance]
 `
 
-func writeTemp(t *testing.T, content string) string {
+const testAgentsYAML = `
+agents:
+  - audience: engineering-analyst
+    scopes: [engineering]
+`
+
+func writeFile(t *testing.T, name, content string) string {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "users.yaml")
+	path := filepath.Join(t.TempDir(), name)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func TestLoadReturnsUsers(t *testing.T) {
+func writeTemp(t *testing.T, content string) string {
+	t.Helper()
+	return writeFile(t, "users.yaml", content)
+}
+
+func writeAgents(t *testing.T, content string) string {
+	t.Helper()
+	return writeFile(t, "agents.yaml", content)
+}
+
+// loadTest loads the default fixture with an agents file in place.
+func loadTest(t *testing.T) *Config {
+	t.Helper()
+	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	cfg, err := Load(writeTemp(t, testYAML))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return cfg
+}
+
+func TestLoadReturnsUsers(t *testing.T) {
+	cfg := loadTest(t)
 	if len(cfg.Users) != 1 {
 		t.Fatalf("want 1 user, got %d", len(cfg.Users))
 	}
@@ -40,11 +63,53 @@ func TestLoadReturnsUsers(t *testing.T) {
 	}
 }
 
-func TestLoadDefaults(t *testing.T) {
-	cfg, err := Load(writeTemp(t, testYAML))
-	if err != nil {
-		t.Fatal(err)
+func TestLoadAgents(t *testing.T) {
+	cfg := loadTest(t)
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("want 1 agent, got %d", len(cfg.Agents))
 	}
+	a := cfg.Agents[0]
+	if a.Audience != "engineering-analyst" {
+		t.Errorf("audience: %q", a.Audience)
+	}
+	if len(a.Scopes) != 1 || a.Scopes[0] != "engineering" {
+		t.Errorf("scopes: %v", a.Scopes)
+	}
+}
+
+func TestLoadAgentsMissingFile(t *testing.T) {
+	t.Setenv("AGENTS_FILE", filepath.Join(t.TempDir(), "absent.yaml"))
+	if _, err := Load(writeTemp(t, testYAML)); err == nil {
+		t.Fatal("want error for a missing agents file")
+	}
+}
+
+func TestLoadAgentsDuplicateAudience(t *testing.T) {
+	t.Setenv("AGENTS_FILE", writeAgents(t, `
+agents:
+  - audience: engineering-analyst
+    scopes: [engineering]
+  - audience: engineering-analyst
+    scopes: [hr]
+`))
+	if _, err := Load(writeTemp(t, testYAML)); err == nil {
+		t.Fatal("want error for a duplicate agent audience")
+	}
+}
+
+func TestLoadAgentsMissingScopes(t *testing.T) {
+	t.Setenv("AGENTS_FILE", writeAgents(t, `
+agents:
+  - audience: engineering-analyst
+    scopes: []
+`))
+	if _, err := Load(writeTemp(t, testYAML)); err == nil {
+		t.Fatal("want error for an agent audience with no scopes")
+	}
+}
+
+func TestLoadDefaults(t *testing.T) {
+	cfg := loadTest(t)
 	want := map[string]string{
 		"GatewayPrefix":    "spiffe://openshell.local/openshell/gateway/",
 		"SupervisorPrefix": "spiffe://openshell.local/openshell/sandbox/",
@@ -73,6 +138,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadEnvOverrides(t *testing.T) {
+	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	t.Setenv("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://other/gateway/")
 	t.Setenv("SUPERVISOR_TRUST_DOMAIN_PREFIX", "spiffe://other/sandbox/")
 	t.Setenv("SPIRE_ISSUER", "http://other:9999")
@@ -107,6 +173,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 }
 
 func TestLoadJWKSURIOverride(t *testing.T) {
+	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	t.Setenv("SPIRE_JWKS_URI", "http://explicit/keys")
 	cfg, err := Load(writeTemp(t, testYAML))
 	if err != nil {
@@ -118,16 +185,14 @@ func TestLoadJWKSURIOverride(t *testing.T) {
 }
 
 func TestLoadSigningKeyDefault(t *testing.T) {
-	cfg, err := Load(writeTemp(t, testYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := loadTest(t)
 	if cfg.SigningKeyFile != "/etc/zt2/access-token-signing-key.pem" {
 		t.Errorf("signing key path: %q", cfg.SigningKeyFile)
 	}
 }
 
 func TestLoadSigningKeyOverride(t *testing.T) {
+	t.Setenv("AGENTS_FILE", writeAgents(t, testAgentsYAML))
 	t.Setenv("ACCESS_TOKEN_SIGNING_KEY_FILE", "/tmp/other.pem")
 	cfg, err := Load(writeTemp(t, testYAML))
 	if err != nil {
