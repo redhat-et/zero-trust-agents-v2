@@ -46,11 +46,13 @@ Access tokens are ES256-signed. The issuer holds the private key — a
 Kubernetes Secret on OpenShift, a `0600` file under the state directory
 on Podman — and the document services verify through
 `/.well-known/jwks.json` without ever holding signing material. The
-demo does not rotate the key: a production design would use a KMS and
-publish overlapping keys during rotation. The gateway's JWT signing
-keys and SPIRE's CA should be persisted and rotated — on a throwaway
-cluster they are ephemeral, which is fine for a demo and wrong for
-production.
+demo fetches that JWKS over plain HTTP; production must serve it over
+TLS and pin the CA, because the key set is the only trust anchor for
+access tokens. The demo does not rotate the key: a production design
+would use a KMS and publish overlapping keys during rotation. The
+gateway's JWT signing keys and SPIRE's CA should be persisted and
+rotated — on a throwaway cluster they are ephemeral, which is fine for
+a demo and wrong for production.
 
 ## Human identity: any IdP
 

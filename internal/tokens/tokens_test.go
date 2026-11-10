@@ -418,3 +418,23 @@ func TestPublicKeyRejectsOversizedCoordinate(t *testing.T) {
 		t.Fatal("want an error for a coordinate longer than 32 bytes")
 	}
 }
+
+func TestJWKSVerifierThrottlesUnknownKid(t *testing.T) {
+	var hits int64
+	s := newTestSigner(t)
+	other := newTestSigner(t)
+	defer withJWKSTimings(time.Minute, time.Hour)()
+	v := NewJWKSVerifier(jwksServer(t, s, &hits).URL)
+
+	if _, err := v.Verify(signOrFail(t, s, testClaims())); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := v.Verify(signOrFail(t, other, testClaims())); err == nil {
+			t.Fatal("want an error for an unknown kid")
+		}
+	}
+	if got := atomic.LoadInt64(&hits); got != 1 {
+		t.Errorf("unknown-kid tokens must not refetch inside the retry window, got %d fetches", got)
+	}
+}

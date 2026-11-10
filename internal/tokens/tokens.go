@@ -250,16 +250,25 @@ func (v *JWKSVerifier) key(kid string) (*ecdsa.PublicKey, error) {
 		v.mu.Unlock()
 		return pub, nil
 	}
-	if v.fetching || time.Since(v.lastFailure) < jwksRetryInterval {
+	// An unknown kid shortly after a successful fetch must not trigger a
+	// refetch: kid is attacker-controlled, so every random value would
+	// otherwise become one JWKS request. A rotated-in key is still
+	// discovered once the interval expires.
+	recentMiss := pub == nil && !v.fetched.IsZero() && time.Since(v.fetched) < jwksRetryInterval
+	if v.fetching || recentMiss || time.Since(v.lastFailure) < jwksRetryInterval {
 		fetching := v.fetching
 		v.mu.Unlock()
 		if pub != nil {
 			return pub, nil
 		}
-		if fetching {
+		switch {
+		case fetching:
 			return nil, fmt.Errorf("jwks: fetch in progress for kid %q", kid)
+		case recentMiss:
+			return nil, fmt.Errorf("unknown kid %q", kid)
+		default:
+			return nil, fmt.Errorf("jwks: no key for kid %q after a failed fetch", kid)
 		}
-		return nil, fmt.Errorf("jwks: no key for kid %q after a failed fetch", kid)
 	}
 	v.fetching = true
 	v.mu.Unlock()

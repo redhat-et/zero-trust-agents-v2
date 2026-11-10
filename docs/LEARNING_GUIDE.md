@@ -104,8 +104,8 @@ the podman-machine specifics this demo had to accommodate.
 ## Suggested reading order in the code
 
 1. `internal/tokens/tokens.go` — what a verifier must check (alg
-   pinning, constant-time compare; watch `TestVerifyAlgNone` and
-   `TestVerifyAlgRS256` fail in `tokens_test.go`).
+   pinning, mandatory `kid`, mandatory `exp`; watch `TestVerifyAlgNone`
+   and `TestVerifyAlgHS256` fail in `tokens_test.go`).
 1. `token-issuer/jwks.go` — P-1363 signature handling and the SPIFFE
    prefix check.
 1. `token-issuer/server.go` — the three-token dispatch and the
