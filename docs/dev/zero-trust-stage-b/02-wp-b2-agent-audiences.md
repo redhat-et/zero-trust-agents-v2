@@ -139,6 +139,7 @@ authorization policy, agent discovery, profile wiring (B3).
 | 2026-11-09 | carol → `engineering-analyst`, `scope=engineering` | `403 insufficient_department_permissions` |
 | 2026-11-09 | `scripts/scenario1.sh` … `scripts/scenario6.sh` | all six print PASS |
 | 2026-11-09 | PR #11 review fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | collision test RED→green; `0 issues`; mint matrix unchanged (200/403/200/403); all six scenarios PASS; issuer logs `agent audiences loaded count=2` |
+| 2026-11-09 | after rebase onto main (#10 merged): `go test -race -count=1 ./...`, `make lint`, rebuilt images, `scenario1..6`, audience matrix | all packages `ok`; `0 issues`; six scenarios PASS; matrix 200/403/200/403; startup log `count=2` |
 | — | OpenShift `B2-A6` | not run: no cluster in this session |
 
 <!-- markdownlint-enable MD013 -->
