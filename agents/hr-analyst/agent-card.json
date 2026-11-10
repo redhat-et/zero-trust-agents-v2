@@ -1,0 +1,17 @@
+{
+  "name": "hr-analyst",
+  "description": "Reads hr documents and answers questions about them",
+  "version": "0.1.0",
+  "skills": [
+    {
+      "id": "hr-analysis",
+      "name": "HR document analysis",
+      "description": "Fetch an hr document and summarize the parts that answer the caller's question",
+      "tags": ["hr", "documents", "analysis"],
+      "examples": ["Summarize DOC-004"]
+    }
+  ],
+  "capabilities": {},
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"]
+}

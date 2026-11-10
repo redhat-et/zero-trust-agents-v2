@@ -1,0 +1,58 @@
+# Agent A (Alice's assistant with a peer agent, scenario 11).
+# Endpoints: the engineering document service plus agent B's exposed host.
+# The peer endpoint is read-write because A2A is a POST; read-only makes
+# the supervisor answer 403 policy_denied before the request leaves the
+# sandbox. The engineering-analyst audience override is what turns the
+# call into an agent-audience final token.
+# Capabilities are profile-configured, never sandbox-chosen.
+id: zt2-alice-a2a-v2
+display_name: Zero Trust v2 - Alice (assistant with an agent peer)
+description: Alice's assistant fetching engineering documents and calling the engineering-analyst agent
+category: other
+credentials:
+  - name: subject_token
+    description: Alice's subject token stored for gateway-side token exchange only
+    required: true
+  - name: access_token
+    description: Access token obtained via RFC 8693 token exchange
+    required: false
+    auth_style: bearer
+    header_name: Authorization
+    token_grant:
+      grant_type: token_exchange
+      token_endpoint: http://token-issuer.zt-demo.svc:8080/token
+      audience: engineering
+      jwt_svid_audience: http://token-issuer.zt-demo.svc:8080
+      client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-spiffe
+      scopes: [engineering]
+      cache_ttl_seconds: 60
+      subject_token:
+        source: provider_credential
+        credential: subject_token
+        subject_token_type: urn:ietf:params:oauth:token-type:access_token
+      audience_overrides:
+        - host: @DOC_HOST@
+          port: @DOC_PORT@
+          audience: engineering
+          scopes: [engineering]
+        - host: @A2A_HOST@
+          port: @A2A_PORT@
+          audience: engineering-analyst
+          scopes: [engineering]
+endpoints:
+  - host: @DOC_HOST@
+    port: @DOC_PORT@
+    @ALLOWED_IPS@
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  # A2A POSTs to B, so read-write is mandatory (read-only => 403 policy_denied).
+  - host: @A2A_HOST@
+    port: @A2A_PORT@
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl
+  - /usr/local/bin/curl
+  - /usr/local/bin/docsclaw

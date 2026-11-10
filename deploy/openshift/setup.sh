@@ -248,7 +248,11 @@ if "${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {found=1} END
 fi
 profile_out_dir="${STATE_DIR}/openshift-profiles"
 mkdir -p "$profile_out_dir"
-for profile in alice-engineering alice-hr carol-hr nodelegation; do
+# Agent A's profile is deliberately absent: its peer endpoint is rendered
+# per run by the scenario helper (see WP-B3).
+PROFILES=(alice-engineering alice-hr carol-hr nodelegation
+    engineering-analyst carol-hr-analyst docsclaw-model)
+for profile in "${PROFILES[@]}"; do
     dept="$(profile_dept "$profile")"
     substitute_profile "$ROOT/deploy/openshift/profiles/$profile.yaml.in" "$dept" \
         >"$profile_out_dir/$profile.yaml"

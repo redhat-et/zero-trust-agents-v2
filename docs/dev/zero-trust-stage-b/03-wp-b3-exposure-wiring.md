@@ -3,7 +3,9 @@
 **Plan reference:** §B.3–B.7 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
 This is the only package that runs DocsClaw inside the v2 stack.
-**Status:** not started.
+**Status:** implemented; scenarios 11–15 pass on the Podman driver.
+The OpenShift pass (B3-A9) is blocked on an unreachable cluster; the gap
+is recorded in the run log, not worked around.
 **Branch:** `feature/stage-b3-a2a-wiring`.
 
 ## Scope
@@ -199,6 +201,18 @@ verification, streaming/push, mainstream-agent adapters.
 
 | Date | Command | Observed |
 | --- | --- | --- |
-| | | |
+| 2026-11-10 | `openshell service expose eng-analyst 8000 agent --authorization-mode bearer-passthrough` | `URL: http://default--eng-analyst--agent.openshell.localhost:18083/`. Stable: derived from workspace, sandbox, service name and gateway port, so a fixed sandbox name yields a fixed URL. `/health` returns 200 from the laptop. |
+| 2026-11-10 | from sandbox A: `curl http://default--eng-analyst--agent.openshell.localhost:18083/health` | `curl: (7) Could not connect`. Supervisor log: `Denied staged transparent connection`. `podman machine ssh getent hosts <name>` → `::1` — the VM resolver maps `*.localhost` to loopback (RFC 6761), and loopback is never a permitted upstream destination. |
+| 2026-11-10 | from sandbox A: same, with `-H 'Host: default--eng-analyst--agent.openshell.localhost'` against the published gateway IP | `403 request_authority_mismatch`: the gateway requires the request authority to equal the endpoint the tunnel was authorized for. |
+| 2026-11-10 | from sandbox A: `curl http://host.openshell.internal:18083/health` with that endpoint declared | `404` from the gateway. The trusted-gateway alias is reachable, but the authority is the alias, not a service name, so it cannot route. Supervisor warns `host.openshell.internal maps to a non-link-local IP; trusted-gateway SSRF exemption disabled`. |
+| 2026-11-10 | `openshell forward service eng-analyst --target-port 8000 --local 127.0.0.1:18800`, profile endpoint `192.168.127.254.nip.io:18800` | From sandbox A: `health=200`. The host-published path works; it is what the Podman driver uses for A→B. |
+| 2026-11-10 | `STATE_DIR=$PWD/.zt2-state bash scripts/setup.sh` | Seven profiles rendered, `Provider profile lint passed.` and `Imported 1 provider profile.` for each. |
+| 2026-11-10 | `scripts/scenario1.sh` … `scenario6.sh` | PASS: full chain, `403 insufficient_department_permissions`, `Token grant failed`, Carol's path, `401 invalid_client_assertion`, `403 invalid_audience`. |
+| 2026-11-10 | `scripts/scenario13.sh` | PASS: exposed URL reachable from the laptop (`/health` 200); tokenless POST returns `401 missing_token`. |
+| 2026-11-10 | `scripts/scenario14.sh` | PASS: out-of-band token has `aud=engineering-analyst`, `scope=engineering`, `azp=<sandbox SVID>`; the hr analyst returns `403 invalid_audience`. |
+| 2026-11-10 | `scripts/scenario15.sh` | PASS: second Alice sandbox obtains a valid token and B returns `403 caller_not_allowed`. |
+| 2026-11-10 | `scripts/scenario11.sh` (MaaS `rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`) | PASS. A's trace: `→ a2a_call {"message":"Please review document DOC-001 …","peer":"engineering-analyst"}` then `← a2a_call ok: [completed] …`. B logs `"request authenticated" sub="alice" azp="spiffe://openshell.local/openshell/sandbox/<A's id>" scope="engineering" aud="engineering-analyst account"`. No `jwks_unavailable` in B's log. |
+| 2026-11-10 | `scripts/scenario12.sh` | PASS. A's trace shows the attempt then `← a2a_call error: … dial tcp 198.18.0.3:18810: connect: permission denied`. A deny with no declared endpoint reaches DocsClaw as a refused connection rather than the `blocked by sandbox network policy` message a declared-but-denied policy produces. |
+| 2026-11-10 | `oc get pods -n zt-demo` | `dial tcp: lookup api.aarwb-kdpqd-969.38qf.p3.openshiftapps.com: no such host`. Cluster unreachable; B3-A9 and the OpenShift spike remain pending. B1-A7 and B2-A6 are also still pending. |
 
 <!-- markdownlint-enable MD013 -->

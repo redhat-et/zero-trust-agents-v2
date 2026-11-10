@@ -31,16 +31,28 @@ echo "== 4/5 provider profiles =="
 # and nodelegation exercise a denial against the engineering service).
 profile_dept() {
     case "$1" in
-        carol-hr) echo hr ;;
+        carol-hr | carol-hr-analyst) echo hr ;;
         *) echo engineering ;;
     esac
 }
+# The model endpoint is the MaaS host the A2A scenarios use; override
+# with MODEL_HOST/MODEL_PORT for another OpenAI-compatible endpoint.
+MODEL_HOST="${MODEL_HOST:-api.enmaas.devshift.net}"
+MODEL_PORT="${MODEL_PORT:-443}"
+# Agent A's profile is deliberately absent: its peer endpoint is
+# rendered per run by the scenario helper (see WP-B3).
+PROFILES=(alice-engineering alice-hr carol-hr nodelegation
+    engineering-analyst carol-hr-analyst docsclaw-model)
 profile_out_dir="${STATE_DIR}/profiles"
 mkdir -p "$profile_out_dir"
-for profile in alice-engineering alice-hr carol-hr nodelegation; do
+for profile in "${PROFILES[@]}"; do
     dept="$(profile_dept "$profile")"
     sed -e "s/@DOC_HOST@/$(doc_endpoint_host "$dept")/" \
         -e "s/@DOC_PORT@/$(doc_endpoint_port "$dept")/" \
+        -e "s/@ISSUER_HOST@/$(doc_endpoint_host)/" \
+        -e "s/@ISSUER_PORT@/8080/" \
+        -e "s|@MODEL_HOST@|$MODEL_HOST|" \
+        -e "s|@MODEL_PORT@|$MODEL_PORT|" \
         -e "$(doc_allowed_ips_subst)" \
         "$ROOT/deploy/podman/profiles/$profile.yaml.in" \
         >"$profile_out_dir/$profile.yaml"
@@ -71,7 +83,7 @@ if "${OS[@]}" profile list 2>/dev/null | awk 'NR>1 && $1 ~ /^zt2-/ {found=1} END
     fi
 fi
 
-for profile in alice-engineering alice-hr carol-hr nodelegation; do
+for profile in "${PROFILES[@]}"; do
     "${OS[@]}" profile lint -f "$profile_out_dir/$profile.yaml" | tail -1
     "${OS[@]}" profile import -f "$profile_out_dir/$profile.yaml" | tail -1
 done
@@ -95,4 +107,5 @@ Demo environment ready.
   token JWKS:     http://127.0.0.1:8080/.well-known/jwks.json
 
 Run scenarios: scripts/scenario1.sh .. scenario6.sh
+A2A scenarios (11-15) need LLM_API_KEY, LLM_BASE_URL and LLM_MODEL.
 EOF

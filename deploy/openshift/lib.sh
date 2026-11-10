@@ -43,7 +43,7 @@ state_set() {
 # engineering service with an hr capability — the denial scenario).
 profile_dept() {
     case "$1" in
-        carol-hr) echo hr ;;
+        carol-hr | carol-hr-analyst) echo hr ;;
         *) echo engineering ;;
     esac
 }
@@ -56,9 +56,21 @@ profile_dept() {
 # endpoint hosts exactly and the workload's resolver has no search
 # domains (the short .svc form NXDOMAINs inside sandboxes).
 substitute_profile() {
-    awk -v host="document-$2.zt-demo.svc.cluster.local" -v port="8080" '
+    awk -v host="document-$2.zt-demo.svc.cluster.local" -v port="8080" \
+        -v issuer_host="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}" \
+        -v issuer_port="8080" \
+        -v a2a_host="${ZT2_A2A_HOST:-openshell.openshell.svc.cluster.local}" \
+        -v a2a_port="${ZT2_A2A_PORT:-8080}" \
+        -v model_host="${MODEL_HOST:-api.enmaas.devshift.net}" \
+        -v model_port="${MODEL_PORT:-443}" '
         /@ALLOWED_IPS@/ { next }
-        { gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port); print }
+        {
+            gsub(/@DOC_HOST@/, host); gsub(/@DOC_PORT@/, port)
+            gsub(/@ISSUER_HOST@/, issuer_host); gsub(/@ISSUER_PORT@/, issuer_port)
+            gsub(/@A2A_HOST@/, a2a_host); gsub(/@A2A_PORT@/, a2a_port)
+            gsub(/@MODEL_HOST@/, model_host); gsub(/@MODEL_PORT@/, model_port)
+            print
+        }
     ' "$1"
 }
 

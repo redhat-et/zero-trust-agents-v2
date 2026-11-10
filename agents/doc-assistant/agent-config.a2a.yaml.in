@@ -1,0 +1,21 @@
+# Agent A (Alice's assistant with a peer). Rendered per run: the peer
+# URLs contain agent B's and the hr analyst's reachable host, and the
+# sandbox network policy decides which of them A can actually reach.
+# Listing both peers is deliberate: configuration grants the tool, policy
+# decides the reach (scenario 12).
+tools:
+  allowed: [fetch_document, a2a_call]
+  workspace: /workspace
+
+document_services:
+  engineering: http://@DOC_HOST@:@DOC_PORT@
+
+a2a_peers:
+  - name: engineering-analyst
+    url: @PEER_URL@
+    description: Reads engineering documents and answers questions about them
+    timeout_seconds: 120
+  - name: hr-analyst
+    url: @HR_PEER_URL@
+    description: Reads hr documents and answers questions about them
+    timeout_seconds: 120

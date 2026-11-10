@@ -85,6 +85,26 @@ CSI drivers; the chart labels its namespaces accordingly). See
 `docs/dev/openshift-stage2-findings.md` for what was observed
 on-cluster.
 
+## Agent-to-agent delegation (roadmap)
+
+Today an agent that calls another agent authenticates as **itself**: the
+calling sandbox's supervisor mints a final token with an agent audience,
+and the receiving agent fetches its own downstream documents with **its
+own** provider profile. The caller's token never travels further than
+the first hop.
+
+The target design is request-bound delegation. B's supervisor would use
+the incoming token as `subject_token` and its own SVID as the actor,
+producing a nested `act` claim chain where scope can only narrow at each
+hop — the model the v1 demo used with OPA. That needs an OpenShell
+feature (a supervisor that can exchange an inbound token rather than
+only its own), and is a candidate upstream proposal.
+
+A second roadmap item: wrapping mainstream agents (Codex, Pi, OpenClaw)
+with an A2A adapter that reuses DocsClaw's `pkg/inboundauth`. The point
+of the demo is that the security model does not depend on the agent —
+verification sits at the network boundary, not in the agent's prompt.
+
 ## What to monitor
 
 - SPIRE agent health and SVID issuance rates (identity is the root of
