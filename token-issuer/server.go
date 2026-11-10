@@ -17,11 +17,12 @@ type JWKSVerifier interface {
 }
 
 type server struct {
-	cfg    *config.Config
-	signer *tokens.Signer
-	jwks   JWKSVerifier
-	mux    *http.ServeMux
-	byUser map[string]config.User
+	cfg         *config.Config
+	signer      *tokens.Signer
+	jwks        JWKSVerifier
+	mux         *http.ServeMux
+	byUser      map[string]config.User
+	agentScopes map[string][]string
 	// Serves only the unauthenticated demo-subject-token endpoint, on a
 	// port the deployment publishes loopback-only; mux (which carries
 	// the authenticated /token) is what gets published beyond loopback.
@@ -29,13 +30,18 @@ type server struct {
 }
 
 func newServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *server {
+	agentScopes := make(map[string][]string, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		agentScopes[a.Audience] = a.Scopes
+	}
 	s := &server{
-		cfg:     cfg,
-		signer:  signer,
-		jwks:    jwks,
-		mux:     http.NewServeMux(),
-		byUser:  make(map[string]config.User),
-		demoMux: http.NewServeMux(),
+		cfg:         cfg,
+		signer:      signer,
+		jwks:        jwks,
+		mux:         http.NewServeMux(),
+		byUser:      make(map[string]config.User),
+		agentScopes: agentScopes,
+		demoMux:     http.NewServeMux(),
 	}
 	for _, u := range cfg.Users {
 		s.byUser[u.ID] = u
@@ -241,8 +247,19 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 	})
 }
 
-var supportedAudiences = map[string]bool{
+var departmentAudiences = map[string]bool{
 	"engineering": true, "finance": true, "admin": true, "hr": true, "public": true,
+}
+
+// audienceScopes reports whether audience is accepted and, for an agent
+// audience, the scopes it requires. Department audiences return nil:
+// any non-empty intersection is enough, as before.
+func (s *server) audienceScopes(audience string) ([]string, bool) {
+	if departmentAudiences[audience] {
+		return nil, true
+	}
+	scopes, ok := s.agentScopes[audience]
+	return scopes, ok
 }
 
 const finalTTL = 300
@@ -258,7 +275,8 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 	audience := r.Form.Get("audience")
-	if !supportedAudiences[audience] {
+	required, supported := s.audienceScopes(audience)
+	if !supported {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_audience", "audience": audience})
 		return
 	}
@@ -271,9 +289,12 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 	}
 	requested := strings.Fields(r.Form.Get("scope"))
 	intersection := intersect(user.Departments, requested)
-	// The public service requires no department scope; every other
-	// audience demands a non-empty intersection.
-	if len(intersection) == 0 && audience != "public" {
+	// The public service requires no department scope. Department
+	// audiences demand any non-empty intersection; agent audiences
+	// demand that the intersection covers at least one scope they
+	// require. The minted scope is never narrowed beyond the
+	// intersection.
+	if audience != "public" && !coversAny(intersection, required) {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error": "insufficient_department_permissions",
 		})
@@ -301,6 +322,25 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		"expires_in":   finalTTL,
 		"scope":        strings.Join(intersection, " "),
 	})
+}
+
+// coversAny reports whether intersection has at least one scope when
+// required is nil (department behavior), or shares a scope with
+// required otherwise.
+func coversAny(intersection, required []string) bool {
+	if required == nil {
+		return len(intersection) > 0
+	}
+	set := make(map[string]bool, len(required))
+	for _, r := range required {
+		set[r] = true
+	}
+	for _, s := range intersection {
+		if set[s] {
+			return true
+		}
+	}
+	return false
 }
 
 func intersect(departments, requested []string) []string {

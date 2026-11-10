@@ -65,11 +65,13 @@ discriminator:
 |---|---|---|---|---|
 | Subject | `user_subject` | — | openshell-gateway, account | 1800s |
 | Intermediate | `intermediate` | gateway SPIFFE ID | supervisor SPIFFE ID | 300s |
-| Final | `final` | supervisor SPIFFE ID | department, account | 300s |
+| Final | `final` | supervisor SPIFFE ID | audience, account | 300s |
 
 The subject token additionally carries `departments` (from
 `config/users.yaml`); the final token's `scope` is the intersection
-result — never the requested list.
+result — never the requested list. The final token's audience is a
+department or, for agent-to-agent calls, an agent audience from
+`config/agents.yaml`.
 
 ## Capability model
 
@@ -83,6 +85,12 @@ The provider profile — not the sandbox — decides what a sandbox may do:
 "Launching a sandbox as Alice with engineering capability" means a
 provider profile holding Alice's subject token with
 `scopes: [engineering]`.
+
+Agent audiences (`config/agents.yaml`) name a peer agent instead of a
+department. The intersection rule is unchanged, but the exchange also
+requires the intersection to cover at least one scope the agent
+declares — so a caller without engineering cannot obtain a token for
+`engineering-analyst` even if another requested scope would intersect.
 
 ## Podman-machine networking notes (macOS)
 
