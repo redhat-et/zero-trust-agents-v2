@@ -174,6 +174,7 @@ Record the exact commands and outputs in the run log.
 | 2026-11-09 | valid final token vs the same token with its signature segment replaced, against `127.0.0.1:18101` | valid `200`; tampered `{"error":"invalid_token"}` |
 | 2026-11-09 | `scripts/scenario1.sh` … `scripts/scenario6.sh` | all six print PASS: 1 fetched DOC-001, 2 mint-time 403, 3 `Token grant failed`, 4 carol fetched DOC-004, 5 rogue SVID 401, 6 `403 invalid_audience` |
 | 2026-11-09 | `grep -rn 'ACCESS_TOKEN_SECRET' internal token-issuer document-service deploy scripts config` | only the `access-token-secret":null` cleanup patch in `deploy/openshift/setup.sh` |
+| 2026-11-09 | PR #10 review fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | new backoff / non-blocking-refresh / oversized-coordinate tests pass; `0 issues`; all six scenarios PASS |
 | — | OpenShift B1-A7 | not run: no cluster in this session |
 
 <!-- markdownlint-enable MD013 -->
