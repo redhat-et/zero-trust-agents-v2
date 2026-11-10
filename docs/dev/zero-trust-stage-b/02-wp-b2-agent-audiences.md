@@ -2,8 +2,8 @@
 
 **Plan reference:** §B.2 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** implemented on `feature/stage-b2-agent-audiences` (stacked
-on B1); Podman evidence recorded below, OpenShift run pending.
+**Status:** PR #12, rebased onto `main`; Podman evidence recorded
+below, OpenShift run pending.
 **Branch:** `feature/stage-b2-agent-audiences`.
 
 ## Scope

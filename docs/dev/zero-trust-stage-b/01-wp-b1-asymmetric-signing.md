@@ -2,8 +2,8 @@
 
 **Plan reference:** §B.1 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** implemented on `feature/stage-b1-es256-jwks`; Podman
-evidence recorded below, OpenShift run pending.
+**Status:** merged in #10 (`6436e10`); Podman evidence recorded below,
+OpenShift run pending.
 **Branch:** `feature/stage-b1-es256-jwks`.
 
 ## Scope

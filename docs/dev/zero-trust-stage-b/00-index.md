@@ -14,8 +14,8 @@ produce. The DocsClaw contract itself is evidenced in the sibling
 
 | WP | Title | Plan refs | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- | --- |
-| B1 | Asymmetric signing and JWKS | §B.1 | `feature/stage-b1-es256-jwks` | — | not started |
-| B2 | Agent audiences in the issuer | §B.2 | `feature/stage-b2-agent-audiences` | — (recommended after B1) | not started |
+| B1 | Asymmetric signing and JWKS | §B.1 | `feature/stage-b1-es256-jwks` | — | merged (#10) |
+| B2 | Agent audiences in the issuer | §B.2 | `feature/stage-b2-agent-audiences` | B1 (merged) | PR #12 |
 | B3 | Exposure and profile wiring, scenarios 11–15 | §B.3–B.7 | `feature/stage-b3-a2a-wiring` | B1, B2 | not started |
 
 <!-- markdownlint-enable MD013 -->
