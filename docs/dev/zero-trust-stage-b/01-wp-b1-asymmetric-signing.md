@@ -2,8 +2,8 @@
 
 **Plan reference:** §B.1 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** merged in #10 (`6436e10`); Podman evidence recorded below,
-OpenShift run pending.
+**Status:** merged in #10 (`6436e10`); Podman evidence recorded below.
+B1-A7 (OpenShift) ran on 2026-11-10 and passed.
 **Branch:** `feature/stage-b1-es256-jwks`.
 
 ## Scope
@@ -176,6 +176,12 @@ Record the exact commands and outputs in the run log.
 | 2026-11-09 | `grep -rn 'ACCESS_TOKEN_SECRET' internal token-issuer document-service deploy scripts config` | only the `access-token-secret":null` cleanup patch in `deploy/openshift/setup.sh` |
 | 2026-11-09 | PR #10 review fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | new backoff / non-blocking-refresh / oversized-coordinate tests pass; `0 issues`; all six scenarios PASS |
 | 2026-11-09 | CodeRabbit PR #10 fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | unknown-kid throttle test RED (4 fetches) → green (1 fetch); `0 issues`; all six scenarios PASS |
-| — | OpenShift B1-A7 | not run: no cluster in this session |
+| 2026-11-10 | `oc whoami`, `oc get pods -n zt-demo` | `cluster-admin` on ROSA `cwy7f-af7e-xo9`; fresh cluster, so the full `deploy/openshift/setup.sh` ran first (exit 0) |
+| 2026-11-10 | `curl -fsS http://127.0.0.1:19180/.well-known/jwks.json` (port-forward to `service/token-issuer`) | one key: `kty=EC`, `crv=P-256`, `alg=ES256`, `kid=d1LRvaZJcMoWJwovcminpxXUkFn8ESMnKcjnFcNwwcY`; no private members — B1-A2 holds on the cluster |
+| 2026-11-10 | minted subject token header on the cluster | `alg=ES256`, `kid` equal to the JWKS `kid` |
+| 2026-11-10 | `ZT2_DRIVER=openshift scripts/scenario1.sh` … `scenario6.sh` | all six print PASS: 1 fetched DOC-001, 2 `403 insufficient_department_permissions`, 3 `Token grant failed`, 4 carol fetched DOC-004, 5 SPIRE refused the rogue identity, 6 `403 invalid_audience` |
+| 2026-11-10 | `git grep -n ACCESS_TOKEN_SECRET -- internal token-issuer document-service deploy scripts config` | only the `access-token-secret":null` cleanup patch in `deploy/openshift/setup.sh` — unchanged from the Podman run |
+
+**B1-A7 status: PASS.** JWKS shape and scenarios 1–6 match the Podman run on ROSA. One driver fix was needed to get scenario 6 green on the cluster (host-port collision with a still-running Podman demo); see the B3 run log.
 
 <!-- markdownlint-enable MD013 -->

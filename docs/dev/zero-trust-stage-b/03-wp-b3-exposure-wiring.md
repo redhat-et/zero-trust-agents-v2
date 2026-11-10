@@ -4,9 +4,12 @@
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
 This is the only package that runs DocsClaw inside the v2 stack.
 **Status:** merged (#14). Scenarios 11–15 pass on the Podman driver.
-The OpenShift pass (B3-A9) is still pending: the cluster was unreachable
-when the work package ran, so the gap is recorded in the run log rather
-than worked around.
+The OpenShift pass (B3-A9) ran on 2026-11-10 and is **still open**: the
+cluster is reachable and scenarios 1–6 pass under `ZT2_DRIVER=openshift`,
+but no cluster-reachable DocsClaw image exists (the `-openshell-*` tag was
+removed from ghcr), so the A2A spike could not run past creating B. The
+run log records the exposure-URL findings and the exact failure; the gap is
+recorded rather than worked around.
 **Branch:** `feature/stage-b3-a2a-wiring`.
 
 ## Scope
@@ -214,6 +217,17 @@ verification, streaming/push, mainstream-agent adapters.
 | 2026-11-10 | `scripts/scenario15.sh` | PASS: second Alice sandbox obtains a valid token and B returns `403 caller_not_allowed`. |
 | 2026-11-10 | `scripts/scenario11.sh` (MaaS `rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`) | PASS. A's trace: `→ a2a_call {"message":"Please review document DOC-001 …","peer":"engineering-analyst"}` then `← a2a_call ok: [completed] …`. B logs `"request authenticated" sub="alice" azp="spiffe://openshell.local/openshell/sandbox/<A's id>" scope="engineering" aud="engineering-analyst account"`. No `jwks_unavailable` in B's log. |
 | 2026-11-10 | `scripts/scenario12.sh` | PASS. A's trace shows the attempt then `← a2a_call error: … dial tcp 198.18.0.3:18810: connect: permission denied`. A deny with no declared endpoint reaches DocsClaw as a refused connection rather than the `blocked by sandbox network policy` message a declared-but-denied policy produces. |
-| 2026-11-10 | `oc get pods -n zt-demo` | `dial tcp: lookup api.aarwb-kdpqd-969.38qf.p3.openshiftapps.com: no such host`. Cluster unreachable; B3-A9 and the OpenShift spike remain pending. B1-A7 and B2-A6 are also still pending. |
+| 2026-11-10 | `oc whoami`; `deploy/openshift/setup.sh` (fresh ROSA `cwy7f-af7e-xo9`) | `cluster-admin`; setup exit 0, all `zt-demo` and `openshell` pods `Running`, gateway `zt2` registered and `Authenticated (mTLS)` |
+| 2026-11-10 | `ZT2_DRIVER=openshift scripts/scenario1.sh` … `scenario6.sh` (default ports) | 1–5 PASS; **6 FAIL**: `sanity check failed: engineering token got 401 from engineering service` |
+| 2026-11-10 | `lsof -nP -iTCP:18101` and `podman ps` | `gvproxy` (the still-running Podman demo) holds IPv4 `127.0.0.1:18101`/`18102`, while `oc port-forward` bound only `[::1]`. `curl 127.0.0.1:18101` therefore reached the **Podman** document service, which rejects a cluster token with `401 invalid_token`. The same token returned `200` from a probe pod against `document-engineering.zt-demo.svc:8080`. Root cause: the OpenShift driver's host ports collide with the Podman driver's. |
+| 2026-11-10 | fix: `scripts/drivers/lib-openshift.sh` host ports moved to the `191xx` block (`19180`/`19101`/`19102`) and `oc port-forward --address 127.0.0.1`; re-ran 1–6 with the Podman stack still up | all six print PASS. This is the B3-A6 regression evidence: scenarios 1–6 green on OpenShift, including scenario 6 |
+| 2026-11-10 | `openshell service expose eng-analyst 8000 agent --authorization-mode bearer-passthrough` (`service list -o json`) | `URL: https://default--eng-analyst--agent.openshell.localhost/` — a `.openshell.localhost` authority with **no port and no Route host**, unlike Podman's `http://…:18083/` |
+| 2026-11-10 | laptop: `curl https://default--eng-analyst--agent.openshell.localhost/health` | `(7) Couldn't connect` — nothing listens on `127.0.0.1:443`; the literal service URL is not laptop-reachable |
+| 2026-11-10 | laptop: `curl -H 'Host: default--eng-analyst--agent.openshell.localhost' https://zt2-gateway.apps.rosa.cwy7f-af7e-xo9.4di1.p3.openshiftapps.com/health` | `412` — TLS-passthrough Route selected by SNI, then the gateway routes on the `Host` authority. The authority-routing form reaches the gateway; a live backend was not available to confirm the final hop |
+| 2026-11-10 | pod in `zt2-sandboxes`: `curl http://openshell.openshell.svc.cluster.local:8080/`; `curl -k https://…:8080/health` | plain HTTP → `connection reset by peer`; HTTPS → `404`. The gateway Service on 8080 is **TLS-only**, so `A2A_HOST=openshell.openshell.svc.cluster.local` + `A2A_PORT=8080` with an `http://` peer URL is wrong twice: wrong scheme and wrong authority (the gateway routes by service authority, not by the Service DNS name) |
+| 2026-11-10 | create sandbox B with `DOCSCLAW_IMAGE` default, `service expose`, `docsclaw serve` | **blocked**: `default--eng-analyst` stuck `Init:ImagePullBackOff`. `ghcr.io/redhat-et/docsclaw:0.16.0-SNAPSHOT-49026ef-openshell-amd64` → `manifest unknown`; the registry now lists only `0.16.0-amd64`/`arm64` (no `-openshell-*` tags). The cached image exists only in the local Podman machine, which the cluster cannot pull from |
+| 2026-11-10 | after the failed pull, `openshell sandbox exec` | `connect error: transport error` / empty stdout — the gateway relay degraded; requires a gateway restart before further A2A work |
+
+**B3-A9 status: OPEN — blocked, not passed.** Scenarios 11, 12 and 15 could not run because no cluster-reachable DocsClaw image exists, and the full A2A spike stopped at the first hop because B could not start `docsclaw serve`. Scenarios 13 and 14 (host/laptop paths) were not run for the same reason. The exposure-URL and gateway-listener findings above are the spike's concrete output; the working A→B form is not yet proven.
 
 <!-- markdownlint-enable MD013 -->
