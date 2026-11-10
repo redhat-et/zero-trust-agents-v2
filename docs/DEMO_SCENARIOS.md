@@ -109,6 +109,48 @@ The differences from the Podman path:
    never sees its injected token, so the replay is staged out-of-band
    with direct `/token` calls.
 
+## Agent-to-agent scenarios (11–15)
+
+Scenarios 11–15 run DocsClaw agents inside the v2 stack and let one
+agent call another over A2A. The agent image and provider profile are
+Stage A artifacts; the model endpoint is supplied by the environment.
+
+```bash
+export LLM_API_KEY=...                       # MaaS key, never on argv
+export LLM_BASE_URL=https://api.enmaas.devshift.net/v1
+export LLM_MODEL=...                         # model name served there
+scripts/scenario11.sh                        # ... through scenario15.sh
+```
+
+Agent A is Alice's assistant; agent B is the engineering analyst; the
+hr analyst is the negative peer. Every agent verifies its own callers:
+the issuer's JWKS is part of each agent's egress profile, and a missing
+JWKS endpoint shows up as `503 jwks_unavailable` rather than a silent
+allow.
+
+| # | What happens | Result | Enforced by |
+|---|---|---|---|
+| 11 | A asks B to review DOC-001 | ✅ | Full chain; B logs `sub`, `azp`, `scope`, `aud` |
+| 12 | A (prompt-injected) tries the hr analyst | ❌ | A's supervisor: no endpoint for that host |
+| 13 | A direct call to B with no token | ❌ 401 `missing_token` | B itself |
+| 14 | An engineering-analyst token replayed at the hr analyst | ❌ 403 `invalid_audience` | The hr analyst |
+| 15 | A second Alice sandbox outside B's caller allowlist | ❌ 403 `caller_not_allowed` | B's allowlist on `azp` |
+
+Scenario 13 is the teaching point for A2A: the platform forwards
+credentials, but it does not authenticate service traffic for you. Every
+hop verifies.
+
+Two implementation notes for presenters:
+
+- **A reaches B through a host-published relay**, not the gateway's
+  `.openshell.localhost` service URL. On the Podman driver that name
+  resolves to loopback inside the VM, which the supervisor refuses as an
+  upstream destination. The service URL is still what scenario 13 uses
+  from the laptop, and it is what the OpenShift path would use.
+- **B fetches documents with its own profile**, not with the caller's
+  token. Request-bound delegation is on the roadmap
+  (`docs/PRODUCTION_RECOMMENDATIONS.md`).
+
 ## Try it yourself
 
 Mint a subject token as any user and inspect its claims:

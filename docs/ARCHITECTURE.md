@@ -92,6 +92,38 @@ requires the intersection to cover at least one scope the agent
 declares — so a caller without engineering cannot obtain a token for
 `engineering-analyst` even if another requested scope would intersect.
 
+## Agent-to-agent flow
+
+Two sandboxes, one bound peer. A's profile carries an
+`audience_overrides` entry for B's host, so the supervisor mints an
+agent-audience final token for that POST; B verifies it itself.
+
+```text
+┌──────────────┐  a2a_call POST  ┌──────────────┐  fetch_document  ┌──────────────┐
+│ Sandbox A    │────────────────▶│ Sandbox B    │─────────────────▶│ Document     │
+│ (assistant)  │  supervisor     │ (analyst)    │  its OWN token   │ service      │
+└──────┬───────┘  injects final  └──────┬───────┘                  └──────────────┘
+       │          aud=analyst           │ verifies: iss, aud,
+       │                                │ scope, azp allowlist
+       ▼                                ▼
+┌──────────────┐                 ┌──────────────┐
+│ Token issuer │◀────────────────│ Issuer JWKS  │  (B's own egress)
+└──────────────┘                 └──────────────┘
+```
+
+Two properties matter for the security story:
+
+- **B authenticates the caller itself.** `inbound_auth` checks `iss`,
+  `aud`, `required_scopes` and an exact `azp` allowlist (the caller's
+  sandbox SVID, not the `…/sandbox/` prefix — the prefix would admit
+  every sandbox). B fetches the issuer JWKS through its own supervisor,
+  so the JWKS host must be in B's profile or every call is
+  `503 jwks_unavailable`.
+- **B acts with its own delegation.** The caller's token stops at B;
+  B's document fetches use B's provider profile. Nested `act`
+  delegation is a roadmap item
+  (`docs/PRODUCTION_RECOMMENDATIONS.md`).
+
 ## Podman-machine networking notes (macOS)
 
 Stage 1 runs on podman machine (libkrun). Three properties of that
