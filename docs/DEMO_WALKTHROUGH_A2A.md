@@ -48,6 +48,39 @@ that *can* obtain a valid token but is *not* in B's `allowed_callers`, so
 the denial isolates the caller allowlist rather than the issuer or the
 profile.
 
+## Topology
+
+Four moving parts: A's supervisor mints the peer-audience token, B's
+supervisor carries the request, B itself verifies, and B's own
+supervisor mints a separate token for the document fetch.
+
+```mermaid
+flowchart LR
+    subgraph LA["sandbox A: alice-a2a"]
+        AA["DocsClaw<br/>assistant"]
+        AS["supervisor"]
+        AA --> AS
+    end
+    subgraph LB["sandbox B: eng-analyst"]
+        BS["supervisor"]
+        BB["DocsClaw<br/>engineering analyst"]
+        BS --> BB
+    end
+    GW["OpenShell gateway"]
+    TI["token issuer"]
+    DS["document-engineering"]
+
+    AS -->|"1. exchange<br/>aud=engineering-analyst"| GW
+    GW --> TI
+    AS ==>|"2. POST /a2a<br/>+ final token"| BS
+    BB -->|"3. verify via JWKS"| BS
+    BS --> TI
+    BB -->|"4. fetch_document<br/>with B's own token"| DS
+```
+
+The thick arrow is the only hop that is new relative to the single-agent
+demo. Everything on either side of it is the existing chain.
+
 ## The token B sees
 
 A2A reuses the three-token chain. The only new part is the final token's
@@ -66,6 +99,49 @@ to the same string, `spiffe://openshell.local/openshell/sandbox/<id>`;
 only the supervisor mounts the Workload API socket, which is what lets it
 fetch the token. That is why the allowlist can name the sandbox ID and
 still match `azp`.
+
+## Token flow
+
+The exchange chain is the same three tokens as the single-agent demo; the
+new step is that the final token names a peer, and the peer verifies it
+instead of a document service.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Sandbox A
+    participant SA as Supervisor A
+    participant GW as Gateway
+    participant TI as Token issuer
+    participant SB as Supervisor B
+    participant B as DocsClaw B
+    participant DS as Document service
+
+    A->>SA: a2a_call engineering-analyst
+    SA->>GW: request a token for the peer host
+    GW->>TI: exchange subject token + gateway SVID
+    TI-->>GW: intermediate, aud = A's SPIFFE ID
+    GW-->>SA: intermediate
+    SA->>TI: exchange intermediate + sandbox SVID
+    Note over TI: aud=engineering-analyst, scope=engineering
+    TI-->>SA: final token, azp = A
+    SA->>SB: POST /a2a + Bearer final token
+    SB->>B: forward, Authorization unchanged
+    B->>SB: fetch the issuer JWKS
+    SB->>TI: egress through the supervisor
+    TI-->>SB: JWKS
+    SB-->>B: JWKS
+    Note over B: check iss, aud, required_scopes, azp allowlist
+    B->>DS: fetch_document with B's own token
+    DS-->>B: document
+    B-->>SB: answer
+    SB-->>SA: A2A response
+    SA-->>A: answer
+```
+
+The caller's token stops at B. The document fetch is B's own exchange,
+which is why B's profile needs the document endpoint even though A
+already has one.
 
 ## How the token gets the right audience
 
@@ -144,6 +220,14 @@ A's *profile* has an endpoint only for B. Scenario 12 is the gap between
 the two: the agent is allowed to attempt the hr call, and its supervisor
 refuses it before egress. This is the same lesson as the single-agent
 prompt-injection scenario, one layer out.
+
+```mermaid
+flowchart LR
+    CFG["agent config<br/>lists hr-analyst"] --> ASK["a2a_call hr-analyst"]
+    ASK --> POL{"hr host declared<br/>in A's profile?"}
+    POL -->|"yes"| GO["supervisor injects a token<br/>and sends the POST"]
+    POL -->|"no"| DENY["supervisor refuses<br/>before egress"]
+```
 
 ## Bootstrap order
 

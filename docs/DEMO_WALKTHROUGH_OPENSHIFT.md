@@ -52,6 +52,43 @@ live beside the gateway: the gateway's ClusterSPIFFEID is scoped to its
 namespace, and co-locating them would hand every sandbox a gateway-prefix
 SVID.
 
+## Cluster topology
+
+```mermaid
+flowchart TB
+    subgraph OPEN["openshell"]
+        RT["Route zt2-gateway<br/>TLS passthrough"]
+        GW["gateway StatefulSet"]
+        RT --> GW
+    end
+    subgraph ZTD["zt-demo"]
+        TI["token issuer + helper"]
+        DS["document services"]
+    end
+    subgraph ZTS["zt2-sandboxes"]
+        SUP["supervisor"]
+        AG["agent container"]
+        PVC["workspace PVC<br/>/sandbox"]
+        SUP --> AG
+        PVC --- AG
+    end
+    subgraph SP["spire / spire-system"]
+        SRV["SPIRE server"]
+        AGENT["SPIRE agents"]
+        CSI["SPIFFE CSI driver"]
+        AGENT --> SRV
+    end
+
+    SUP -->|"gRPC"| GW
+    SUP -->|"FQDN"| TI
+    SUP -->|"FQDN"| DS
+    CSI -->|"Workload API socket"| SUP
+```
+
+Every sandbox request leaves through its supervisor, which is why the
+gateway and the services only ever see the supervisor's address, not the
+agent's.
+
 ## Identity in the cluster
 
 There is no `register-sandbox.sh` on Kubernetes. The SPIFFE CSI driver
@@ -84,6 +121,31 @@ Two rules follow from this:
 - **Distinct host ports.** The OpenShift driver uses its own block
   (`19180`, `19101`, `19102`) so a laptop that is also running the Podman
   demo cannot silently route a scenario into the wrong stack.
+
+```mermaid
+flowchart LR
+    subgraph L["laptop"]
+        SC["scenario script"]
+    end
+    subgraph PF["oc port-forward"]
+        P1["19180 issuer"]
+        P2["19101 / 19102 documents"]
+        P3["18090 minter"]
+    end
+    subgraph CL["cluster"]
+        TI["token-issuer.zt-demo.svc"]
+        DS["document-*.zt-demo.svc"]
+    end
+    subgraph SB["sandbox"]
+        CURL["curl / docsclaw"]
+    end
+
+    SC --> P1 --> TI
+    SC --> P2 --> DS
+    SC --> P3
+    CURL -->|"full FQDN"| TI
+    CURL -->|"full FQDN"| DS
+```
 
 ## The JWKS path
 
@@ -136,6 +198,14 @@ routes by HTTP authority:
 ```bash
 curl -k -H 'Host: default--eng-analyst--agent.openshell.localhost' \
   https://<gateway Route>/health
+```
+
+```mermaid
+flowchart TB
+    L["laptop: curl -k<br/>Host: the service authority"] -->|"SNI = Route host"| R["OpenShift router"]
+    R -->|"TLS passthrough"| G["gateway :8080"]
+    G -->|"routes by Host authority"| S["sandbox service :8000"]
+    SA["sandbox: dials the authority on 443"] -->|"policy DNS NXDOMAIN<br/>198.18.0.2 denied"| X["refused by the supervisor"]
 ```
 
 Scenarios use the driver helper `service_curl`, which does exactly this.
