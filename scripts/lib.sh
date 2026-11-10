@@ -174,17 +174,39 @@ ensure_model_provider() {
 create_agent_service() {
     local name="$1" provider="$2" port="$3"
     local id
-    ensure_model_provider
+    # Failures inside a command substitution cannot lean on `set -e`
+    # (bash disables it there unless inherit_errexit is set), so every
+    # step is checked explicitly: otherwise an empty ID is reported as a
+    # successful creation and the caller registers it.
+    ensure_model_provider || return 1
     SANDBOX_ENV=(
         --env "LLM_PROVIDER=${LLM_PROVIDER:-openai}"
         --env "LLM_BASE_URL=${LLM_BASE_URL:?LLM_BASE_URL is required for agent scenarios}"
         --env "LLM_MODEL=${LLM_MODEL:?LLM_MODEL is required for agent scenarios}"
     )
-    id="$(create_sandbox "$name" "$provider" "$AGENT_IMAGE" "$MODEL_PROVIDER")"
+    id="$(create_sandbox "$name" "$provider" "$AGENT_IMAGE" "$MODEL_PROVIDER")" || {
+        SANDBOX_ENV=()
+        return 1
+    }
     SANDBOX_ENV=()
     "${OS[@]}" service expose "$name" "$port" agent \
-        --authorization-mode bearer-passthrough >/dev/null
+        --authorization-mode bearer-passthrough >/dev/null || return 1
     echo "$id"
+}
+
+# render_alice_a2a_profile — render agent A's profile with this driver's
+# values and import it. The peer endpoint carries a runtime value, so the
+# profile is replaced per run rather than imported once at setup.
+render_alice_a2a_profile() {
+    mkdir -p "$STATE_DIR/profiles"
+    sed -e "s|@DOC_HOST@|$(doc_host engineering)|" \
+        -e "s|@DOC_PORT@|$(doc_port engineering)|" \
+        -e "s|@A2A_HOST@|$A2A_HOST|" \
+        -e "s|@A2A_PORT@|$A2A_PORT|" \
+        -e "s|@ALLOWED_IPS@|$(allowed_ips_line)|" \
+        "$ROOT/deploy/${ZT2_DRIVER}/profiles/alice-a2a.yaml.in" \
+        >"$STATE_DIR/profiles/alice-a2a.yaml"
+    import_profile_runtime zt2-alice-a2a-v2 "$STATE_DIR/profiles/alice-a2a.yaml"
 }
 
 # require_agent_env — the model endpoint is an outside dependency the

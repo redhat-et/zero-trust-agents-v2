@@ -89,8 +89,10 @@ stop_relay() {
     local pid
     pid="$(cat "$pidfile")"
     # A reused PID must not be signalled: check it is still our relay.
+    # Match the name as a whole argument: a prefix match would let
+    # `stop_relay alice-a2a` signal `alice-a2a-2`'s relay on PID reuse.
     if kill -0 "$pid" 2>/dev/null &&
-        ps -p "$pid" -o command= | grep -q "forward service $name"; then
+        ps -p "$pid" -o command= | grep -qE "forward service $name( |$)"; then
         kill "$pid" >/dev/null 2>&1 || true
     fi
     rm -f "$pidfile"

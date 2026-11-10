@@ -14,14 +14,7 @@ trap 'stop_relay alice-a2a' EXIT
 remove_sandbox alice-a2a
 remove_sandbox alice-a2a-2
 rm -f "$STATE_DIR/relay-alice-a2a.pid"
-sed -e "s|@DOC_HOST@|$(doc_host engineering)|" \
-    -e "s|@DOC_PORT@|$(doc_port engineering)|" \
-    -e "s|@A2A_HOST@|$A2A_HOST|" \
-    -e "s|@A2A_PORT@|$A2A_PORT|" \
-    -e "s|@ALLOWED_IPS@|$(allowed_ips_line)|" \
-    "$ROOT/deploy/${ZT2_DRIVER}/profiles/alice-a2a.yaml.in" \
-    >"$STATE_DIR/profiles/alice-a2a.yaml"
-import_profile_runtime zt2-alice-a2a-v2 "$STATE_DIR/profiles/alice-a2a.yaml"
+render_alice_a2a_profile
 
 agent_provider "alice-a2a-prov-12-$$" zt2-alice-a2a-v2 alice
 A_ID="$(create_agent_service alice-a2a "alice-a2a-prov-12-$$" 8000)"

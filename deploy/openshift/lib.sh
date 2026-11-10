@@ -61,7 +61,7 @@ substitute_profile() {
         -v issuer_port="8080" \
         -v a2a_host="${ZT2_A2A_HOST:-openshell.openshell.svc.cluster.local}" \
         -v a2a_port="${ZT2_A2A_PORT:-8080}" \
-        -v model_host="${MODEL_HOST:-}" \
+        -v model_host="${MODEL_HOST:-api.enmaas.devshift.net}" \
         -v model_port="${MODEL_PORT:-443}" '
         /@ALLOWED_IPS@/ { next }
         {

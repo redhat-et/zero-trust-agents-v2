@@ -21,14 +21,7 @@ start_relay eng-analyst 8000 "$A2A_PORT"
 remove_sandbox alice-a2a
 remove_sandbox alice-a2a-2
 rm -f "$STATE_DIR/relay-alice-a2a.pid"
-sed -e "s|@DOC_HOST@|$(doc_host engineering)|" \
-    -e "s|@DOC_PORT@|$(doc_port engineering)|" \
-    -e "s|@A2A_HOST@|$A2A_HOST|" \
-    -e "s|@A2A_PORT@|$A2A_PORT|" \
-    -e "s|@ALLOWED_IPS@|$(allowed_ips_line)|" \
-    "$ROOT/deploy/${ZT2_DRIVER}/profiles/alice-a2a.yaml.in" \
-    >"$STATE_DIR/profiles/alice-a2a.yaml"
-import_profile_runtime zt2-alice-a2a-v2 "$STATE_DIR/profiles/alice-a2a.yaml"
+render_alice_a2a_profile
 
 # Neither Alice sandbox runs the agent here: the scenario is about which
 # caller B admits, and a plain curl caller exercises exactly that.
@@ -52,13 +45,15 @@ TARGET="$(peer_url "$A2A_HOST" "$A2A_PORT")"
 # A2's supervisor mints a valid engineering-analyst token; only the caller
 # allowlist can refuse it. curl runs inside A2, so the 192.168 address is
 # the sandbox's route to this host, not the laptop's.
-BODY="$("${OS[@]}" sandbox exec --name alice-a2a-2 --no-tty -- \
+RAW="$("${OS[@]}" sandbox exec --name alice-a2a-2 --no-tty -- \
     curl -sS -m 30 -X POST -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"review DOC-001"}],"messageId":"m1","kind":"message"}}}' \
-    "${TARGET}a2a")"
+    -w '\n%{http_code}' "${TARGET}a2a")"
+STATUS="${RAW##*$'\n'}"
+BODY="${RAW%$'\n'*}"
 
-if [[ "$BODY" == *caller_not_allowed* ]]; then
+if [[ "$STATUS" == "403" && "$BODY" == *caller_not_allowed* ]]; then
     pass "B refused the second Alice sandbox with 403 caller_not_allowed"
 else
-    fail "expected caller_not_allowed at B, got: $BODY"
+    fail "expected 403 caller_not_allowed at B, got $STATUS: $BODY"
 fi

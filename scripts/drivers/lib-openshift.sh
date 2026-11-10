@@ -26,7 +26,7 @@ HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.16.0-SNAPSHOT-49026ef-openshell-amd64}"
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
-ISSUER_EGRESS_HOST="token-issuer.zt-demo.svc.cluster.local"
+ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}"
 # Agent-to-agent reach. Unexercised: the ROSA cluster was unreachable
 # when B3 ran, so this is the in-cluster gateway Service and remains a
 # recorded gap (see the B3 run log), not a verified value.
