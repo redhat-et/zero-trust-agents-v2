@@ -3,9 +3,10 @@
 **Plan reference:** §B.3–B.7 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
 This is the only package that runs DocsClaw inside the v2 stack.
-**Status:** implemented; scenarios 11–15 pass on the Podman driver.
-The OpenShift pass (B3-A9) is blocked on an unreachable cluster; the gap
-is recorded in the run log, not worked around.
+**Status:** merged (#14). Scenarios 11–15 pass on the Podman driver.
+The OpenShift pass (B3-A9) is still pending: the cluster was unreachable
+when the work package ran, so the gap is recorded in the run log rather
+than worked around.
 **Branch:** `feature/stage-b3-a2a-wiring`.
 
 ## Scope
