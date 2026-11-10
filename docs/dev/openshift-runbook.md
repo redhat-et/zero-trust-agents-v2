@@ -44,6 +44,13 @@ pods mount it), registers the gateway with the CLI (mTLS; a stale
 the four provider profiles, and starts the loopback port-forward for
 the subject-token minter.
 
+> **Stage B image requirement.** The token-issuer manifest sets
+> `AGENTS_FILE=/config/agents.yaml`, which only images built from the
+> agent-audience change contain. A stale `:v2` image starts but honours
+> department audiences only. After setup, `oc -n zt-demo logs
+> deploy/token-issuer` must show `agent audiences loaded count=2`; if it
+> does not, rebuild and push the images, then rerun setup.
+
 Expected wall-clock from an empty cluster: 4:03 measured on a fresh
 ROSA 4.22.20 cluster (2026-10-30, images pre-pushed). The script is
 idempotent — re-run it after any partial failure.

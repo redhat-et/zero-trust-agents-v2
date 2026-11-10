@@ -12,7 +12,8 @@
 # with `oc port-forward deploy/token-issuer` only, matching Stage 1's
 # loopback-only publish.
 #
-# config/users.yaml is baked into the image at /config/users.yaml.
+# config/users.yaml and config/agents.yaml are baked into the image at
+# /config/users.yaml and /config/agents.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -62,6 +63,8 @@ spec:
               value: :8080
             - name: USERS_FILE
               value: /config/users.yaml
+            - name: AGENTS_FILE
+              value: /config/agents.yaml
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

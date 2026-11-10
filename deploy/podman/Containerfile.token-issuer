@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 go build -o /out/token-issuer ./token-issuer
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/token-issuer /token-issuer
 COPY config/users.yaml /config/users.yaml
+COPY config/agents.yaml /config/agents.yaml
 EXPOSE 8080
 USER nonroot
 ENTRYPOINT ["/token-issuer"]

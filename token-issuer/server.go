@@ -17,25 +17,33 @@ type JWKSVerifier interface {
 }
 
 type server struct {
-	cfg    *config.Config
-	signer *tokens.Signer
-	jwks   JWKSVerifier
-	mux    *http.ServeMux
-	byUser map[string]config.User
+	cfg         *config.Config
+	signer      *tokens.Signer
+	jwks        JWKSVerifier
+	mux         *http.ServeMux
+	byUser      map[string]config.User
+	agentScopes map[string][]string
 	// Serves only the unauthenticated demo-subject-token endpoint, on a
 	// port the deployment publishes loopback-only; mux (which carries
 	// the authenticated /token) is what gets published beyond loopback.
 	demoMux *http.ServeMux
 }
 
+// newServer indexes users and agent scopes up front so the exchange
+// handlers never rescan the config per request.
 func newServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *server {
+	agentScopes := make(map[string][]string, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		agentScopes[a.Audience] = a.Scopes
+	}
 	s := &server{
-		cfg:     cfg,
-		signer:  signer,
-		jwks:    jwks,
-		mux:     http.NewServeMux(),
-		byUser:  make(map[string]config.User),
-		demoMux: http.NewServeMux(),
+		cfg:         cfg,
+		signer:      signer,
+		jwks:        jwks,
+		mux:         http.NewServeMux(),
+		byUser:      make(map[string]config.User),
+		agentScopes: agentScopes,
+		demoMux:     http.NewServeMux(),
 	}
 	for _, u := range cfg.Users {
 		s.byUser[u.ID] = u
@@ -241,8 +249,47 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 	})
 }
 
-var supportedAudiences = map[string]bool{
-	"engineering": true, "finance": true, "admin": true, "hr": true, "public": true,
+type audienceKind int
+
+const (
+	audienceDepartment audienceKind = iota
+	audienceAgent
+	audiencePublic
+)
+
+// audienceRule is the admission rule for one audience. The kind is
+// explicit so an empty scope list can never be mistaken for the
+// department rule.
+type audienceRule struct {
+	kind   audienceKind
+	scopes []string
+}
+
+// allows reports whether the minted intersection satisfies the rule.
+func (r audienceRule) allows(intersection []string) bool {
+	switch r.kind {
+	case audiencePublic:
+		return true
+	case audienceAgent:
+		return len(intersect(r.scopes, intersection)) > 0
+	default:
+		return len(intersection) > 0
+	}
+}
+
+// audienceRuleFor reports whether audience is accepted and its rule.
+func (s *server) audienceRuleFor(audience string) (audienceRule, bool) {
+	if audience == "public" {
+		return audienceRule{kind: audiencePublic}, true
+	}
+	if config.DepartmentAudiences[audience] {
+		return audienceRule{kind: audienceDepartment}, true
+	}
+	scopes, ok := s.agentScopes[audience]
+	if !ok {
+		return audienceRule{}, false
+	}
+	return audienceRule{kind: audienceAgent, scopes: scopes}, true
 }
 
 const finalTTL = 300
@@ -258,7 +305,8 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 	audience := r.Form.Get("audience")
-	if !supportedAudiences[audience] {
+	rule, supported := s.audienceRuleFor(audience)
+	if !supported {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_audience", "audience": audience})
 		return
 	}
@@ -271,9 +319,9 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 	}
 	requested := strings.Fields(r.Form.Get("scope"))
 	intersection := intersect(user.Departments, requested)
-	// The public service requires no department scope; every other
-	// audience demands a non-empty intersection.
-	if len(intersection) == 0 && audience != "public" {
+	// The rule decides what the intersection must contain. The minted
+	// scope is never narrowed beyond the intersection itself.
+	if !rule.allows(intersection) {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error": "insufficient_department_permissions",
 		})

@@ -18,6 +18,7 @@ import (
 // own subject tokens in process.
 var testIssuerSigner = mustTestSigner()
 
+// mustTestSigner mints tokens for tests with an ephemeral key.
 func mustTestSigner() *tokens.Signer {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -30,7 +31,10 @@ func mustTestSigner() *tokens.Signer {
 	return s
 }
 
+// newTestConfig loads the repo fixtures with the test agents file in
+// place.
 func newTestConfig(t *testing.T) *config.Config {
+	t.Setenv("AGENTS_FILE", "testdata/agents.yaml")
 	cfg, err := config.Load("../config/users.yaml")
 	if err != nil {
 		t.Fatal(err)

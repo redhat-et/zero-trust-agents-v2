@@ -90,6 +90,7 @@ run podman run -d \
     -e "SUPERVISOR_TRUST_DOMAIN_PREFIX=spiffe://${TRUST_DOMAIN}/openshell/sandbox/" \
     -e "PORT=:8080" \
     -e "USERS_FILE=/config/users.yaml" \
+    -e "AGENTS_FILE=/config/agents.yaml" \
     "${IMAGE_PREFIX}/token-issuer"
 
 if ! wait_for_http "http://127.0.0.1:${TOKEN_ISSUER_HOST_PORT}/healthz" "token issuer (main)"; then
