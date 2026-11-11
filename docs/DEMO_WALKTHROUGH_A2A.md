@@ -73,10 +73,19 @@ flowchart LR
     AS -->|"1. exchange<br/>aud=engineering-analyst"| GW
     GW --> TI
     AS ==>|"2. POST /a2a<br/>+ final token"| BS
-    BB -->|"3. verify via JWKS"| BS
-    BS --> TI
-    BB -->|"4. fetch_document<br/>with B's own token"| DS
+    BS -->|"3. forward"| BB
+    BB -->|"4. verify: fetch JWKS"| BS
+    BB -->|"5. fetch_document"| BS
+    BS -->|"6. exchange / JWKS"| TI
+    BS -->|"7. request + B's token"| DS
 ```
+
+Every line out of sandbox B passes through B's supervisor, which is what
+injects the token: DocsClaw asks for the document, the supervisor
+performs B's own exchange (6) and forwards the request already carrying a
+bearer token (7). The single edge to the issuer (6) is both the inbound
+JWKS fetch for verification and the outbound exchange for the document
+fetch — the same egress path, used twice.
 
 The thick arrow is the only hop that is new relative to the single-agent
 demo. Everything on either side of it is the existing chain.
@@ -132,8 +141,12 @@ sequenceDiagram
     TI-->>SB: JWKS
     SB-->>B: JWKS
     Note over B: check iss, aud, required_scopes, azp allowlist
-    B->>DS: fetch_document with B's own token
-    DS-->>B: document
+    B->>SB: fetch_document
+    SB->>TI: exchange for B's own token
+    TI-->>SB: final token, scope=engineering
+    SB->>DS: request + Bearer final token
+    DS-->>SB: document
+    SB-->>B: document
     B-->>SB: answer
     SB-->>SA: A2A response
     SA-->>A: answer
@@ -141,7 +154,8 @@ sequenceDiagram
 
 The caller's token stops at B. The document fetch is B's own exchange,
 which is why B's profile needs the document endpoint even though A
-already has one.
+already has one. DocsClaw never holds a token: it opens a connection, and
+its supervisor attaches the bearer token on the way out.
 
 ## How the token gets the right audience
 
