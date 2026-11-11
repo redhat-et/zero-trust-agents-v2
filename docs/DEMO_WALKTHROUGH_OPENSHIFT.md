@@ -257,9 +257,11 @@ ZT2_DRIVER=openshift scripts/scenario14.sh
 ```
 
 Scenarios 11 and 12 need `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL` and
-exit 2 without them; 13, 14 and 15 run without a model. `LLM_BASE_URL` is
-the OpenAI-compatible base **including** `/v1`: DocsClaw appends
+exit 2 without them; 13, 14 and 15 run without a model. For the MaaS
+endpoint, `LLM_BASE_URL` must include `/v1`: DocsClaw appends
 `/chat/completions`, so a base without `/v1` gets a 503 from the gateway.
+For other OpenAI-compatible endpoints, use the base path the provider
+documents.
 
 Two behaviours differ from Podman and are expected, not failures:
 
