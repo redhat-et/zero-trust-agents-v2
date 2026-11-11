@@ -294,7 +294,10 @@ start_docsclaw_serve() {
 }
 
 # wait_for_health AGENT_URL [ATTEMPTS] — poll an agent's /health through
-# the path the scenario will use. The service route needs a moment after
+# the path the scenario will use. AGENT_URL must be a gateway-published
+# exposed-service URL: on OpenShift service_curl re-targets any URL to
+# the gateway Route, so an in-cluster or port-forwarded URL would be
+# polled at the wrong place. The service route needs a moment after
 # registration and the relay is useless until the agent listens.
 wait_for_health() {
     local url="$1" attempts="${2:-30}" code=""

@@ -176,7 +176,7 @@ Record the exact commands and outputs in the run log.
 | 2026-11-09 | `grep -rn 'ACCESS_TOKEN_SECRET' internal token-issuer document-service deploy scripts config` | only the `access-token-secret":null` cleanup patch in `deploy/openshift/setup.sh` |
 | 2026-11-09 | PR #10 review fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | new backoff / non-blocking-refresh / oversized-coordinate tests pass; `0 issues`; all six scenarios PASS |
 | 2026-11-09 | CodeRabbit PR #10 fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | unknown-kid throttle test RED (4 fetches) → green (1 fetch); `0 issues`; all six scenarios PASS |
-| 2026-11-10 | `oc whoami`, `oc get pods -n zt-demo` | `cluster-admin` on ROSA `cwy7f-af7e-xo9`; fresh cluster, so the full `deploy/openshift/setup.sh` ran first (exit 0) |
+| 2026-11-10 | `oc whoami`, `oc get pods -n zt-demo` | `cluster-admin` on ROSA `cwy7f-af7e4-xo9`; fresh cluster, so the full `deploy/openshift/setup.sh` ran first (exit 0) |
 | 2026-11-10 | `curl -fsS http://127.0.0.1:19180/.well-known/jwks.json` (port-forward to `service/token-issuer`) | one key: `kty=EC`, `crv=P-256`, `alg=ES256`, `kid=d1LRvaZJcMoWJwovcminpxXUkFn8ESMnKcjnFcNwwcY`; no private members — B1-A2 holds on the cluster |
 | 2026-11-10 | minted subject token header on the cluster | `alg=ES256`, `kid` equal to the JWKS `kid` |
 | 2026-11-10 | `ZT2_DRIVER=openshift scripts/scenario1.sh` … `scenario6.sh` | all six print PASS: 1 fetched DOC-001, 2 `403 insufficient_department_permissions`, 3 `Token grant failed`, 4 carol fetched DOC-004, 5 SPIRE refused the rogue identity, 6 `403 invalid_audience` |

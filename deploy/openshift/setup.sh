@@ -191,7 +191,7 @@ echo "== 5/7 subject-token minter port-forward =="
 # port-forward to the pod -- never a Route or Service.
 DEMO_PORT="${ZT2_DEMO_LOCAL_PORT:-18090}"
 [[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
-oc -n zt-demo port-forward deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
+oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
 FORWARD_PID=$!
 echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT

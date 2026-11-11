@@ -234,13 +234,16 @@ The cluster is amd64, so both image sources must be real amd64 builds.
 | Image | How it is produced |
 | ----- | ------------------ |
 | `quay.io/panni/zt2-{token-issuer,document-service}:v2` | `deploy/openshift/build-images.sh` on the rhel homelab |
-| DocsClaw agent image | `make image-openshell OPENARCH=amd64` from the DocsClaw checkout |
+| DocsClaw agent image | `make image-openshell OPENARCH=amd64` from the DocsClaw checkout, with a multi-arch base |
 
 The DocsClaw image needs care: the historical `-openshell-amd64` tag was a
 mislabeled arm64 image (fails with `Exec format error`), and the driver
 pulls sandbox images with `if_not_present`, so a rebuilt image under the
 same tag is not re-pulled. Publish a fresh tag and point `DOCSCLAW_IMAGE`
-at it.
+at it. `Containerfile.openshell` currently pins a single-arch arm64
+`ubi-minimal` digest, so an amd64 build fails at `microdnf install -y tar`;
+switch it to the multi-arch `ubi10/ubi-minimal:latest` index until
+redhat-et/docsclaw#131 lands.
 
 ## Running the scenarios
 
@@ -252,8 +255,8 @@ ZT2_DRIVER=openshift scripts/scenario13.sh
 ZT2_DRIVER=openshift scripts/scenario14.sh
 ```
 
-The agent scenarios need `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL` and
-exit 2 without them.
+Scenarios 11 and 12 need `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL` and
+exit 2 without them; 13 and 14 run without a model.
 
 Two behaviours differ from Podman and are expected, not failures:
 

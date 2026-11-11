@@ -57,9 +57,9 @@ doc_port() { doc_endpoint_port "$1"; }
 
 # service_curl URL [args...] — an exposed-service URL is directly
 # reachable on Podman (plain HTTP to the published gateway port), so
-# this is a plain curl. The OpenShift driver rewrites it through the
-# gateway Route.
-service_curl() { curl "$@"; }
+# this is a plain `curl -sS`. The OpenShift driver rewrites it through
+# the gateway Route.
+service_curl() { curl -sS "$@"; }
 
 # allowed_ips_line — the profile template token for a destination's
 # address allowlist. Sandboxes deny RFC 1918 destinations unless the

@@ -31,7 +31,8 @@ WORKSPACE_DIR="/sandbox"
 # A real linux/amd64 build is required: the historical ghcr -openshell-amd64
 # tag was a mislabeled arm64 image (Exec format error on amd64 nodes) and
 # has since been removed from ghcr. Built from ~/work/docsclaw with
-# GOARCH=amd64 against a multi-arch UBI base; repo is public.
+# GOARCH=amd64 against a multi-arch UBI base; the quay repo is public.
+# A reproducible, project-owned build is tracked in #18.
 AGENT_IMAGE="${DOCSCLAW_IMAGE:-quay.io/panni/docsclaw:v2-openshell-amd64-r3}"
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
@@ -47,7 +48,9 @@ ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.l
 # host swap, so the value stays as-is until the spike is completed.
 A2A_HOST="${ZT2_A2A_HOST:-openshell.openshell.svc.cluster.local}"
 A2A_PORT="${ZT2_A2A_PORT:-8080}"
-A2A_HR_PORT="$A2A_PORT"
+# Scenario 12 relies on the hr peer being undeclared, so it must not
+# alias the engineering port; mirror the Podman driver's split.
+A2A_HR_PORT="${ZT2_A2A_HR_PORT:-18810}"
 
 # start_relay/stop_relay — Kubernetes sandboxes have a routable address,
 # so there is no host relay to run.
@@ -258,7 +261,7 @@ ensure_forward "$FINANCE_LOCAL_PORT" service/document-finance
 DEMO_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
 if ! curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1; then
     kill_pidfile "$STATE_DIR/openshift-forward.pid"
-    oc -n zt-demo port-forward deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
+    oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
     echo $! >"$STATE_DIR/openshift-forward.pid"
     for _ in $(seq 1 15); do
         curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break

@@ -284,7 +284,7 @@ scripts/scenario11.sh                        # ... through scenario15.sh
 | 14 | An engineering-analyst token replayed at the hr analyst | `403 invalid_audience` | The hr analyst's response |
 | 15 | A second Alice sandbox outside B's allowlist | `403 caller_not_allowed` | B's response |
 
-Scenarios 13 and 15 are model-free; 11, 12 and 14 need the model.
+Scenarios 13, 14 and 15 are model-free; 11 and 12 need the model.
 
 ### What scenario 11 prints
 
@@ -307,12 +307,13 @@ the same destination that the gateway routes.
 | Driver | What A dials | Why |
 | ------ | ------------ | --- |
 | Podman | `openshell forward service` relay on the host, `18800` | The gateway's `.openshell.localhost` URL resolves to loopback inside the VM, which the supervisor refuses |
-| OpenShift | the gateway Route with `Host: <service authority>` | The authority is not resolvable in-cluster; the Route is |
+| OpenShift | nothing yet — in-cluster A→B is blocked | The exposed-service authority does not resolve through the sandbox's policy DNS, and the agent cannot attach a `Host` header to a Route dial |
 
 Scenario 13 always calls the exposed URL from the laptop, so it needs the
 form that works from outside the cluster too. On OpenShift that is the
-Route plus the `Host` header (`service_curl`); details and the in-cluster
-limitation are in `docs/DEMO_WALKTHROUGH_OPENSHIFT.md`.
+gateway Route plus the `Host` header (`service_curl`); that form is for
+the laptop, not for A. Details and the in-cluster limitation are in
+`docs/DEMO_WALKTHROUGH_OPENSHIFT.md`.
 
 ## Gotchas
 
