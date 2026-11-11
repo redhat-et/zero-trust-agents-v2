@@ -4,6 +4,25 @@ Each scenario is a script in `scripts/` — run them after `scripts/setup.sh`.
 Every script prints what it does and exits non-zero if the result differs
 from the expectation.
 
+## Scenario numbering
+
+Numbers follow the integration plan
+(`docs/dev/2026-11-06-zt2-docsclaw-integration-plan.md`), not this
+repository's commit order, so there is a deliberate gap:
+
+| Range | Stage | What it covers | Status here |
+| ----- | ----- | -------------- | ----------- |
+| 1–6 | v1 lineage | curl sandboxes, the exchange chain, mint-time and resource denies | implemented |
+| 7–10 | Stage A | single-agent DocsClaw: summarise, deny, prompt injection, Carol's path | planned, not implemented |
+| 11–15 | Stage B | agent-to-agent between DocsClaw sandboxes | implemented |
+
+Scenarios 7–10 are specified in §A.6 of the plan. They were never added to
+this repository — the Stage A artifacts are recorded as absent in
+`docs/dev/zero-trust-stage-b/00-index.md` — and the numbering was kept so
+scenario references match the plan. The Stage A *helpers* (the agent
+definition, the `create_sandbox` image parameter, `sandbox_ask`) do exist,
+which is what the Stage B scenarios use.
+
 ## Permission matrix
 
 Users and their departments (from `config/users.yaml`):
@@ -88,23 +107,23 @@ The differences from the Podman path:
    intermediate token (audience = the sandbox's SPIFFE ID), exchanges
    that for a final scoped token, and injects it into the outbound
    request. The document service validates audience + scope.
-1. **Permission intersection** — same user, wrong capability: the issuer
+2. **Permission intersection** — same user, wrong capability: the issuer
    returns `403 insufficient_department_permissions` and no token is
    minted. The script also drives the exchange directly against the
    issuer so you can see the deny at the mint point.
-1. **No delegation** — the sandbox is launched from a profile whose
+3. **No delegation** — the sandbox is launched from a profile whose
    `subject_token` credential is absent. The gateway has nothing to
    exchange; the request never carries a token.
-1. **Another allowed path** — Carol and hr, proving the matrix is
+4. **Another allowed path** — Carol and hr, proving the matrix is
    data-driven, not hardcoded.
-1. **Rogue workload** — a container with a *validly signed* SVID whose
+5. **Rogue workload** — a container with a *validly signed* SVID whose
    SPIFFE ID (`spiffe://openshell.local/rogue/workload/1`) is not under
    the registered supervisor prefix. The issuer rejects the client
    assertion (`401 invalid_client_assertion`) before looking at any
    token: workload identity is the root of trust, not credentials a
    sandbox could have stolen. SPIRE cannot issue outside its trust
    domain, so "rogue" here means an unregistered path inside it.
-1. **Audience binding** — a valid engineering-scoped token replayed
+6. **Audience binding** — a valid engineering-scoped token replayed
    against the finance service: `403 invalid_audience`. The sandbox
    never sees its injected token, so the replay is staged out-of-band
    with direct `/token` calls.

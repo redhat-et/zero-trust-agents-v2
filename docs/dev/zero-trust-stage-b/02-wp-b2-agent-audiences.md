@@ -2,8 +2,8 @@
 
 **Plan reference:** §B.2 of the
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
-**Status:** merged in #12 (`033ac8d`); Podman evidence recorded below,
-OpenShift run pending.
+**Status:** merged in #12 (`033ac8d`); Podman evidence recorded below.
+B2-A6 (OpenShift) ran on 2026-11-10 and passed.
 **Branch:** `feature/stage-b2-agent-audiences`.
 
 ## Scope
@@ -141,6 +141,9 @@ authorization policy, agent discovery, profile wiring (B3).
 | 2026-11-09 | PR #11 review fixes: `go test -race -count=1 ./...`, `make lint`, `scenario1..6` | collision test RED→green; `0 issues`; mint matrix unchanged (200/403/200/403); all six scenarios PASS; issuer logs `agent audiences loaded count=2` |
 | 2026-11-09 | after rebase onto main (#10 merged): `go test -race -count=1 ./...`, `make lint`, rebuilt images, `scenario1..6`, audience matrix | all packages `ok`; `0 issues`; six scenarios PASS; matrix 200/403/200/403; startup log `count=2` |
 | 2026-11-10 | PR #12 doc-comment fixes: `make lint test`, `go test -race ./...` | `0 issues`; all four packages `ok`; squash-merged as #12 (`033ac8d`) |
-| — | OpenShift `B2-A6` | not run: no cluster in this session |
+| 2026-11-10 | OpenShift `B2-A6`, run in-cluster as a probe pod against `http://token-issuer.zt-demo.svc:8080/token` | intermediate `200`; `audience=engineering-analyst scope=engineering` → `200`, final token `aud=["engineering-analyst","account"]`, `scope="engineering"`, `azp` = the supervisor SVID, `iss="http://token-issuer.zt-demo.svc:8080"` |
+| 2026-11-10 | wrong capability `scope=hr`, unknown audience `marketing` | `403` and `400` respectively, same as Podman |
+
+**B2-A6 status: PASS.** The cluster image carries `config/agents.yaml` (`agent audiences loaded count=2` at start) and the exchange matches the Podman matrix. Run in-cluster because the host port-forward tunnel was flaky after scenario churn; the same request through the forward succeeded once the tunnel was healthy.
 
 <!-- markdownlint-enable MD013 -->

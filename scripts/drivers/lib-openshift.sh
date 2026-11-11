@@ -23,21 +23,54 @@ OS=(openshell --gateway zt2 --gateway-endpoint "https://$ZT2_GATEWAY_ROUTE")
 ENGINEERING_URL="http://document-engineering.zt-demo.svc.cluster.local:8080"
 HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 
-AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.16.0-SNAPSHOT-49026ef-openshell-amd64}"
+# The Kubernetes driver mounts the workspace PVC at /sandbox; the image's
+# /workspace is the read-only container rootfs, so uploads and the serve
+# log must target /sandbox (verified 2026-11-10: /sandbox is writable,
+# /workspace returns EACCES).
+WORKSPACE_DIR="/sandbox"
+# A real linux/amd64 build is required: the historical ghcr -openshell-amd64
+# tag was a mislabeled arm64 image (Exec format error on amd64 nodes) and
+# has since been removed from ghcr. Built from ~/work/docsclaw with
+# GOARCH=amd64 against a multi-arch UBI base; the quay repo is public.
+# A reproducible, project-owned build is tracked in #18.
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-quay.io/panni/docsclaw:v2-openshell-amd64-r3}"
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
 ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}"
-# Agent-to-agent reach. Unexercised: the ROSA cluster was unreachable
-# when B3 ran, so this is the in-cluster gateway Service and remains a
-# recorded gap (see the B3 run log), not a verified value.
+# Agent-to-agent reach. Still a recorded gap (see the B3 run log): the
+# 2026-11-10 cluster pass showed this default is wrong twice over. The
+# gateway Service on 8080 is TLS-only (plain HTTP is reset), and the
+# gateway routes exposed services by their HTTP authority, not by the
+# Service DNS name. `service expose` yields an authority such as
+# https://default--<sandbox>--<service>.openshell.localhost/ — no port,
+# no Route host — which is the value the gateway matches. A working
+# A2A endpoint therefore needs a host/port/scheme decision, not just a
+# host swap, so the value stays as-is until the spike is completed.
 A2A_HOST="${ZT2_A2A_HOST:-openshell.openshell.svc.cluster.local}"
 A2A_PORT="${ZT2_A2A_PORT:-8080}"
-A2A_HR_PORT="$A2A_PORT"
+# Scenario 12 relies on the hr peer being undeclared, so it must not
+# alias the engineering port; mirror the Podman driver's split.
+A2A_HR_PORT="${ZT2_A2A_HR_PORT:-18810}"
 
 # start_relay/stop_relay — Kubernetes sandboxes have a routable address,
 # so there is no host relay to run.
 start_relay() { :; }
 stop_relay() { :; }
+
+# service_curl URL [args...] — reach an exposed-service URL from this
+# host. The gateway publishes a *.openshell.localhost authority that
+# nothing resolves, so dial the gateway Route instead and send the
+# service authority as the HTTP Host: the router picks the Route by SNI
+# and the gateway routes by Host. -k because the gateway cert is
+# self-signed and its SAN is the Route host.
+service_curl() {
+    local url="$1" rest authority path
+    shift
+    rest="${url#*://}"
+    authority="${rest%%/*}"
+    if [[ "$rest" == */* ]]; then path="/${rest#*/}"; else path="/"; fi
+    curl -skS -H "Host: $authority" "https://$ZT2_GATEWAY_ROUTE$path" "$@"
+}
 
 # Document endpoint and peer URL as an agent config names them.
 doc_host() { printf 'document-%s.zt-demo.svc.cluster.local\n' "$1"; }
@@ -49,12 +82,21 @@ peer_url() { printf 'http://%s:%s/\n' "$1" "$2"; }
 # Host-side URLs via lazily-started oc port-forwards. PIDs are recorded
 # for teardown; the minter forward belongs to setup.sh and is only
 # adopted here.
+#
+# The 191xx block is deliberately disjoint from the Podman driver's
+# host ports (issuer 8080, document services 18101-18105). On a laptop
+# that still runs the Podman demo, sharing 18101/18102 makes the
+# OpenShift scenarios silently reach the Podman services through
+# gvproxy: oc binds IPv6 localhost while gvproxy holds IPv4, so both
+# listeners succeed and curl's 127.0.0.1 hits the wrong stack. Distinct
+# ports, plus --address 127.0.0.1 in ensure_forward, keep the two runs
+# from crossing over.
 DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
-ISSUER_LOCAL_PORT="${ZT2_ISSUER_LOCAL_PORT:-18080}"
+ISSUER_LOCAL_PORT="${ZT2_ISSUER_LOCAL_PORT:-19180}"
 ISSUER_LOCAL="http://127.0.0.1:$ISSUER_LOCAL_PORT"
-ENGINEERING_LOCAL_PORT="${ZT2_ENGINEERING_LOCAL_PORT:-18101}"
+ENGINEERING_LOCAL_PORT="${ZT2_ENGINEERING_LOCAL_PORT:-19101}"
 ENGINEERING_LOCAL="http://127.0.0.1:$ENGINEERING_LOCAL_PORT"
-FINANCE_LOCAL_PORT="${ZT2_FINANCE_LOCAL_PORT:-18102}"
+FINANCE_LOCAL_PORT="${ZT2_FINANCE_LOCAL_PORT:-19102}"
 FINANCE_LOCAL="http://127.0.0.1:$FINANCE_LOCAL_PORT"
 
 # ensure_forward PORT RESOURCE — start a port-forward unless one is
@@ -71,7 +113,7 @@ ensure_forward() {
     if [[ -f "$pidfile" ]]; then
         kill_pidfile "$pidfile"
     fi
-    oc -n zt-demo port-forward "$resource" "${port}:8080" >/dev/null 2>&1 &
+    oc -n zt-demo port-forward --address 127.0.0.1 "$resource" "${port}:8080" >/dev/null 2>&1 &
     echo $! >"$pidfile"
     for _ in $(seq 1 15); do
         curl -fsS --max-time 2 "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1 && return 0
@@ -219,7 +261,7 @@ ensure_forward "$FINANCE_LOCAL_PORT" service/document-finance
 DEMO_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
 if ! curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1; then
     kill_pidfile "$STATE_DIR/openshift-forward.pid"
-    oc -n zt-demo port-forward deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
+    oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
     echo $! >"$STATE_DIR/openshift-forward.pid"
     for _ in $(seq 1 15); do
         curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break

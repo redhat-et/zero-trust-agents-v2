@@ -37,7 +37,7 @@ register_sandbox "$A2_ID" >/dev/null
 
 write_agent_config "$ROOT/agents/engineering-analyst" "$STATE_DIR/a2a/b" \
     "$(sandbox_spiffe_id "$A_ID")"
-sandbox_upload eng-analyst "$STATE_DIR/a2a/b/agent" /workspace >/dev/null
+sandbox_upload eng-analyst "$STATE_DIR/a2a/b/agent" "$WORKSPACE_DIR" >/dev/null
 start_docsclaw_serve eng-analyst
 
 TARGET="$(peer_url "$A2A_HOST" "$A2A_PORT")"

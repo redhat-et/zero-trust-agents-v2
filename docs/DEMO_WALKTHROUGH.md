@@ -6,6 +6,10 @@ access decisions are made. It complements `docs/ARCHITECTURE.md` (design)
 and `docs/LEARNING_GUIDE.md` (security ideas) with the runtime details
 you need to explain the demo to other people.
 
+Two companion walkthroughs cover the later additions:
+`docs/DEMO_WALKTHROUGH_A2A.md` for agent-to-agent calls and
+`docs/DEMO_WALKTHROUGH_OPENSHIFT.md` for the Kubernetes driver.
+
 Status: written against the Podman path on macOS (podman machine), 2026-11-04.
 
 ## Mental model: three layers
@@ -440,14 +444,14 @@ traceback when a segment is not a JWT.
 Scenario 2 is the clearest single demonstration of mint-time denial:
 
 1. Alice's subject token carries `departments: [engineering, finance]`.
-1. The `alice-hr` profile requests `scopes: [hr]` with `audience: engineering`.
-1. The issuer mints the intermediate token with `aud` set to the sandbox
+2. The `alice-hr` profile requests `scopes: [hr]` with `audience: engineering`.
+3. The issuer mints the intermediate token with `aud` set to the sandbox
    SPIFFE ID, `scope: openid profile email`, and no departments claim.
-1. The supervisor requests the final token with `audience=engineering` and `scope=hr`.
-1. The issuer intersects `{engineering, finance}` with `{hr}`, gets the
+4. The supervisor requests the final token with `audience=engineering` and `scope=hr`.
+5. The issuer intersects `{engineering, finance}` with `{hr}`, gets the
    empty set, and returns `403 insufficient_department_permissions`. No
    final token is minted.
-1. The supervisor's proxy reports `502` to the sandbox because it has no
+6. The supervisor's proxy reports `502` to the sandbox because it has no
    token to inject. The document service is never contacted.
 
 The script's direct issuer call is what exposes the `403` behind the

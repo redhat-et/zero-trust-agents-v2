@@ -18,7 +18,7 @@ register_sandbox "$C_ID" >/dev/null
 
 write_agent_config "$ROOT/agents/hr-analyst" "$STATE_DIR/a2a/c" \
     "spiffe://openshell.local/openshell/sandbox/not-the-replay-caller"
-sandbox_upload hr-analyst "$STATE_DIR/a2a/c/agent" /workspace >/dev/null
+sandbox_upload hr-analyst "$STATE_DIR/a2a/c/agent" "$WORKSPACE_DIR" >/dev/null
 start_docsclaw_serve hr-analyst
 
 # The replay is issued from this host, so it goes through the service URL
@@ -39,13 +39,12 @@ TOKEN="$(mint_final_token "$MINT_ID" engineering-analyst engineering alice)"
 printf "\nMinted token claims:\n"
 decode_jwt "$TOKEN"
 
-BODY="$(curl -sS -m 15 -X POST -H "Authorization: Bearer $TOKEN" \
+BODY="$(service_curl "$TARGET/a2a" -m 15 -X POST -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"summarize DOC-004"}],"messageId":"m1","kind":"message"}}}' \
-    "$TARGET/a2a")"
-STATUS="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -X POST \
+    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"summarize DOC-004"}],"messageId":"m1","kind":"message"}}}')"
+STATUS="$(service_curl "$TARGET/a2a" -m 15 -o /dev/null -w '%{http_code}' -X POST \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}' "$TARGET/a2a")"
+    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}')"
 
 if [[ "$STATUS" == "403" && "$BODY" == *invalid_audience* ]]; then
     pass "the hr analyst refused the engineering-analyst token with 403 invalid_audience"

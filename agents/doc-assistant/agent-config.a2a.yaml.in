@@ -5,7 +5,7 @@
 # decides the reach (scenario 12).
 tools:
   allowed: [fetch_document, a2a_call]
-  workspace: /workspace
+  workspace: @WORKSPACE@
 
 document_services:
   engineering: http://@DOC_HOST@:@DOC_PORT@
