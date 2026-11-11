@@ -297,5 +297,5 @@ For a short-lived cluster, expiry is the teardown.
   not a policy result.
 - Use `docs/DEMO_WALKTHROUGH_A2A.md` for the agent layer, and
   `docs/DEMO_SCENARIOS.md` for the per-scenario teaching points.
-- Track the in-cluster A2A exposure gap before promising scenarios 11–15
-  on Kubernetes.
+- Track the in-cluster A2A exposure gap before promising scenarios 11 and
+  15 on Kubernetes.
