@@ -307,13 +307,13 @@ the same destination that the gateway routes.
 | Driver | What A dials | Why |
 | ------ | ------------ | --- |
 | Podman | `openshell forward service` relay on the host, `18800` | The gateway's `.openshell.localhost` URL resolves to loopback inside the VM, which the supervisor refuses |
-| OpenShift | nothing yet — in-cluster A→B is blocked | The exposed-service authority does not resolve through the sandbox's policy DNS, and the agent cannot attach a `Host` header to a Route dial |
+| OpenShift | (planned) B's native headless Service, `default--<sandbox>.zt2-sandboxes.svc.cluster.local:8000` | The exposed-service authority is not resolvable from a sandbox, and the gateway Route path is blocked by the supervisor's TLS trust |
 
 Scenario 13 always calls the exposed URL from the laptop, so it needs the
 form that works from outside the cluster too. On OpenShift that is the
 gateway Route plus the `Host` header (`service_curl`); that form is for
-the laptop, not for A. Details and the in-cluster limitation are in
-`docs/DEMO_WALKTHROUGH_OPENSHIFT.md`.
+the laptop, not for A. The in-cluster limitation and the native-Service
+plan are in `docs/DEMO_WALKTHROUGH_OPENSHIFT.md`.
 
 ## Gotchas
 

@@ -228,6 +228,37 @@ A to reach B — cannot run yet. This is recorded as a gap, not worked
 around. Scenario 12 does not need A to reach B: its undeclared hr peer is
 denied by A's supervisor before egress, so it runs and passes.
 
+### Why the gateway Route cannot be A's in-cluster path
+
+A 2026-11-12 probe tried the two forms that would keep the gateway in the
+east–west path. Both are blocked upstream, not in DocsClaw:
+
+- **Gateway Route + `Host: <authority>`:** works from a plain pod (`200`
+  via `54.164.165.249`), but the same hostname also resolves to
+  `32.193.255.39`, which blackholes. The supervisor mapped both addresses
+  and attempted the dead one, so the sandbox call timed out after 15 s.
+- **Gateway Service `:8080` + `Host: <authority>`:** reachable from a
+  plain pod (`404` for a stale authority). From a sandbox the supervisor
+  logs `ALLOWED … [engine:opa]` and then `NET:FAIL`; the client sees a
+  certificate from `CN=OpenShell Sandbox CA` (the supervisor terminates
+  TLS) followed by `SSL_ERROR_SYSCALL`. The supervisor cannot verify the
+  gateway's self-signed chart certificate on the upstream leg.
+
+A DocsClaw `host_header` option would therefore be necessary but not
+sufficient: the application never controls that upstream TLS handshake.
+`tls: passthrough` would skip the MITM but also disables the L7
+inspection that injects A's minted token; `allow_uninspected_credentials`
+governs credential handling, not upstream TLS trust.
+
+The chosen in-cluster path is B's **native headless Service**
+(`spec.service: true`), addressed as
+`default--<sandbox>.zt2-sandboxes.svc.cluster.local:8000` over plain HTTP.
+The supervisor already proxies plain HTTP for the document services and
+injects the minted token for a declared endpoint, so the token flow is
+unchanged and no TLS trust is involved. The gateway stays in the
+north–south path used by scenarios 13 and 14. Implementation is tracked in
+`docs/dev/2026-11-12-a2a-native-service-plan.md`.
+
 ## Images
 
 The cluster is amd64, so both image sources must be real amd64 builds.
