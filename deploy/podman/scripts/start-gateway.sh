@@ -17,7 +17,7 @@ require_cmd openssl
 require_cmd curl
 
 GATEWAY_CONTAINER="${GATEWAY_CONTAINER:-zt2-gateway}"
-GATEWAY_IMAGE="${GATEWAY_IMAGE:-ghcr.io/nvidia/openshell/gateway:0.1.6}"
+GATEWAY_IMAGE="${GATEWAY_IMAGE:-ghcr.io/nvidia/openshell/gateway:0.1.8}"
 GATEWAY_PORT="${GATEWAY_PORT:-18083}"
 GATEWAY_HEALTH_PORT="${GATEWAY_HEALTH_PORT:-18084}"
 GATEWAY_NAME="${GATEWAY_NAME:-zt2}"

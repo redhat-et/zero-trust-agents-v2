@@ -8,7 +8,7 @@ OpenShift 4.19+). Everything here is what
 ## One-time prerequisites (laptop + homelab)
 
 - `oc` logged in to the cluster with cluster-admin.
-- Helm 3, `openshell` CLI 0.1.6, `podman` with the `rhel` remote
+- Helm 3, `openshell` CLI 0.1.8, `podman` with the `rhel` remote
   connection, `yq`, `python3`, `curl` on PATH.
 - `podman --remote --connection rhel login quay.io` (push credentials
   live on the remote host).

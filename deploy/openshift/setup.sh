@@ -25,7 +25,7 @@ ZT2_QUAY_NS="${ZT2_QUAY_NS:-panni}"
 ZT2_IMAGE_TAG="${ZT2_IMAGE_TAG:-v2}"
 SPIRE_CHART_VERSION="${SPIRE_CHART_VERSION:-0.29.0}"
 SPIRE_CRDS_VERSION="${SPIRE_CRDS_VERSION:-0.5.0}"
-OPENSHELL_CHART_VERSION="${OPENSHELL_CHART_VERSION:-0.1.6}"
+OPENSHELL_CHART_VERSION="${OPENSHELL_CHART_VERSION:-0.1.8}"
 AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.9}"
 
 echo "== 0/7 prechecks =="
@@ -116,6 +116,21 @@ helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
     --set openshiftRoute.host="$ROUTE_HOST" \
     --set "pkiInitJob.serverDnsNames[0]=$ROUTE_HOST" \
     --wait
+# Trust the deployment's own CA for inspected egress. The gateway's
+# chart certificate is self-signed and supervisors verify upstream
+# against webpki-roots plus the system bundle, so an in-cluster peer is
+# otherwise unverifiable (OPA ALLOWED, then NET:FAIL). OpenShell 0.1.7+
+# lets an operator supply a bundle: the chart mounts this ConfigMap into
+# the gateway and passes the path to supervisors.
+CA_PEM="$(oc -n openshell get secret openshell-server-tls \
+    -o go-template='{{index .data "ca.crt" | base64decode}}')"
+oc -n openshell create configmap zt2-peer-ca \
+    --from-literal=ca.crt="$CA_PEM" --dry-run=client -o yaml |
+    oc apply -f - >/dev/null
+helm upgrade openshell oci://ghcr.io/nvidia/openshell/helm-chart \
+    --version "$OPENSHELL_CHART_VERSION" -n openshell --reuse-values \
+    --set supervisor.network.additionalCaConfigMapName=zt2-peer-ca \
+    --wait >/dev/null
 oc -n openshell rollout status statefulset/openshell --timeout=300s
 # Supervisor pods (in zt2-sandboxes) mount the chart's client TLS
 # secret; without it they stay in ContainerCreating and sandboxes hang

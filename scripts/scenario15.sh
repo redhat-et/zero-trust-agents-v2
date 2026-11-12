@@ -16,7 +16,7 @@ echo "  == agent B =="
 agent_provider "eng-analyst-prov-15-$$" zt2-engineering-analyst-v2 alice
 B_ID="$(create_sandbox eng-analyst "eng-analyst-prov-15-$$" "$AGENT_IMAGE")"
 register_sandbox "$B_ID" >/dev/null
-start_relay eng-analyst 8000 "$A2A_PORT"
+publish_a2a_peer eng-analyst 8000
 
 remove_sandbox alice-a2a
 remove_sandbox alice-a2a-2
@@ -45,12 +45,22 @@ TARGET="$(peer_url "$A2A_HOST" "$A2A_PORT")"
 # A2's supervisor mints a valid engineering-analyst token; only the caller
 # allowlist can refuse it. curl runs inside A2, so the 192.168 address is
 # the sandbox's route to this host, not the laptop's.
-RAW="$("${OS[@]}" sandbox exec --name alice-a2a-2 --no-tty -- \
-    curl -sS -m 30 -X POST -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"review DOC-001"}],"messageId":"m1","kind":"message"}}}' \
-    -w '\n%{http_code}' "${TARGET}a2a")"
-STATUS="${RAW##*$'\n'}"
-BODY="${RAW%$'\n'*}"
+#
+# OpenShell 0.1.8 delivers a provider's credential to a newly created
+# supervisor asynchronously, and the supervisor caches a failed grant. The
+# first request after sandbox creation can therefore come back as a 502
+# with an empty body even though nothing is wrong. Retry until the grant
+# succeeds; a persistent 502 still fails the scenario below.
+for _ in $(seq 1 12); do
+    RAW="$("${OS[@]}" sandbox exec --name alice-a2a-2 --no-tty -- \
+        curl -sS -m 30 -X POST -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"kind":"text","text":"review DOC-001"}],"messageId":"m1","kind":"message"}}}' \
+        -w '\n%{http_code}' "${TARGET}a2a")"
+    STATUS="${RAW##*$'\n'}"
+    BODY="${RAW%$'\n'*}"
+    [[ "$STATUS" == "502" ]] || break
+    sleep 5
+done
 
 if [[ "$STATUS" == "403" && "$BODY" == *caller_not_allowed* ]]; then
     pass "B refused the second Alice sandbox with 403 caller_not_allowed"
