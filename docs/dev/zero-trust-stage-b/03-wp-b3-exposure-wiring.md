@@ -4,15 +4,14 @@
 [integration plan](../2026-11-06-zt2-docsclaw-integration-plan.md).
 This is the only package that runs DocsClaw inside the v2 stack.
 **Status:** merged (#14). Scenarios 11–15 pass on the Podman driver.
-The OpenShift pass (B3-A9) ran on 2026-11-10 and is **still open**:
-scenarios 1–6 pass under `ZT2_DRIVER=openshift`, and a genuine amd64
-DocsClaw image was built and proven (B serves `/health` 200; scenarios 13
-and 14 PASS). Scenarios 11 and 15 remain blocked because the Kubernetes
-driver's policy DNS cannot resolve the exposed-service authority
-(`*.openshell.localhost`), so A cannot reach B. Scenario 12 needs a
-re-run now that the hr peer no longer aliases the engineering port. The
-run log records the findings and the exact failure; the gap is recorded
-rather than worked around.
+The OpenShift pass (B3-A9) ran on 2026-11-10 and 2026-11-11 and is
+**still open**: on a fresh ROSA 4.22 cluster scenarios 1–6, 12, 13 and 14
+PASS under `ZT2_DRIVER=openshift`, with a genuine amd64 DocsClaw image.
+Scenarios 11 and 15 remain blocked because the Kubernetes driver's policy
+DNS cannot resolve the exposed-service authority
+(`*.openshell.localhost`), so A cannot reach B. The run log records the
+findings and the exact failure; the gap is recorded rather than worked
+around.
 **Branch:** `feature/stage-b3-a2a-wiring`.
 
 ## Scope
@@ -240,7 +239,13 @@ verification, streaming/push, mainstream-agent adapters.
 | 2026-11-10 | `ZT2_DRIVER=openshift scripts/scenario13.sh` | **PASS**: exposed URL reachable from the laptop (/health 200), tokenless call refused `401 missing_token` — B3-A3 proven on OpenShift |
 | 2026-11-10 | `ZT2_DRIVER=openshift scripts/scenario14.sh` | **PASS**: out-of-band token has `aud=["engineering-analyst","account"]`, `scope=engineering`, `azp=<sandbox SVID>`; the hr analyst returns `403 invalid_audience` — B3-A4 proven on OpenShift |
 | 2026-11-10 | from sandbox A with the `alice-a2a` profile declaring `default--eng-analyst--agent.openshell.localhost:443` | **connection refused**. A's supervisor: `DENIED default--eng-analyst--agent.openshell.localhost [reason:policy_dns_upstream_no_data]`, then `DENIED /usr/bin/curl(0) -> 198.18.0.2:443 [reason:transparent_tcp_policy_denied]`. The policy DNS forwards `*.openshell.localhost` upstream, which returns NXDOMAIN, so the exposed-service authority is **not resolvable from a sandbox** |
+| 2026-11-11 | fresh ROSA 4.22 cluster `yd8pg-pgs8y-j3t`; `ZT2_DRIVER=openshift deploy/openshift/setup.sh` | exit 0. Namespaces, gateway Route `zt2-gateway.apps.rosa.yd8pg-pgs8y-j3t.w9d2.p3.openshiftapps.com`, `openshell` mTLS registration and the `18090` minter forward (`--address 127.0.0.1`) all healthy |
+| 2026-11-11 | `for s in {1..6}; do ZT2_DRIVER=openshift scripts/scenario$s.sh; done` | all six PASS. Regression evidence for the `oc port-forward --address 127.0.0.1` fix |
+| 2026-11-11 | `ZT2_DRIVER=openshift scripts/scenario12.sh` | **PASS**: A's trace `→ a2a_call {"peer":"hr-analyst"}` then `← a2a_call error: … dial tcp 198.18.0.3:18810: connect: permission denied`. The port split makes the undeclared hr peer a policy deny instead of an allowed call to the gateway |
+| 2026-11-11 | from A's sandbox: `curl http://openshell.openshell.svc.cluster.local:{18810,8080}/` | `18810` → supervisor `DENIED … [reason:transparent_tcp_mapping_denied]`; `8080` → `ALLOWED … engine:opa`, then `curl (52) Empty reply` from the TLS-only gateway. Policy-level proof of the split, independent of the model |
+| 2026-11-11 | `ZT2_DRIVER=openshift scripts/scenario13.sh` and `scenario14.sh` | both PASS. Regression evidence for the Podman `curl -sS` change and the minter forward |
+| 2026-11-11 | model-path diagnosis: DocsClaw `ask` returned `503` with `LLM_BASE_URL=https://api.enmaas.devshift.net` | DocsClaw appends `/chat/completions`, so the call hit `/chat/completions` → `503`; `POST /v1/chat/completions` → `200`. With `LLM_BASE_URL=https://api.enmaas.devshift.net/v1` the model calls succeed. The supervisor logged `ALLOWED POST … engine:l7` throughout, so egress policy was never the cause |
 
-**B3-A9 status: OPEN — laptop path proven, in-cluster A→B blocked.** Scenarios 13 and 14 PASS under `ZT2_DRIVER=openshift`. Scenarios 11 and 15 cannot run: they need sandbox A to reach B, and the Kubernetes driver's policy DNS cannot resolve the exposed-service authority (`*.openshell.localhost` → upstream NXDOMAIN), so the supervisor refuses the connection. Scenario 12 needs a re-run: on this driver `A2A_HR_PORT` aliased the engineering port, so the hr peer resolved to a declared destination and the call was policy-allowed; the ports are now split (`8080` declared, `18810` undeclared), so the supervisor should refuse before egress. The Podman driver gets round the exposure gap with a host-published relay (`openshell forward`, `start_relay`); the OpenShift driver's `start_relay` is a deliberate no-op and there is no in-cluster equivalent yet. This is an OpenShell/Kubernetes exposure gap, not a profile mistake: declaring the authority in A's policy is necessary but not sufficient. Two supporting dependencies were also fixed on the way: a genuine amd64 image and the `/sandbox` workspace path.
+**B3-A9 status: OPEN — laptop path and scenario 12 proven, in-cluster A→B blocked.** On the 2026-11-11 re-run (fresh ROSA 4.22 `yd8pg-pgs8y-j3t`), scenarios 1–6, 12, 13 and 14 PASS. Scenario 12 is the re-run the review called for: the port split (`8080` declared, `18810` undeclared) makes A's supervisor refuse the undeclared hr peer before egress (`dial tcp …:18810: connect: permission denied`). Scenarios 11 and 15 cannot run: they need sandbox A to reach B, and the Kubernetes driver's policy DNS cannot resolve the exposed-service authority (`*.openshell.localhost` → upstream NXDOMAIN), so the supervisor refuses the connection. The Podman driver gets round the exposure gap with a host-published relay (`openshell forward`, `start_relay`); the OpenShift driver's `start_relay` is a deliberate no-op and there is no in-cluster equivalent yet. This is an OpenShell/Kubernetes exposure gap, not a profile mistake: declaring the authority in A's policy is necessary but not sufficient. Two supporting dependencies were also fixed on the way: a genuine amd64 image and the `/sandbox` workspace path.
 
 <!-- markdownlint-enable MD013 -->

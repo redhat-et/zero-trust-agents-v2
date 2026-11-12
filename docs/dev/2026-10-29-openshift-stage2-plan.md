@@ -334,7 +334,7 @@ Expected: converges without errors (stale-profile chain works).
 
 - [ ] **Step 4: All six scenarios**
 
-Run: `ZT2_DRIVER=openshift scripts/scenario{1..6}.sh` in order.
+Run: `for s in {1..6}; do ZT2_DRIVER=openshift scripts/scenario$s.sh; done` in order.
 Expected: all six pass. Scenario 5 should pass via the attestation-refusal path. If scenario 1 401s, check `JWT_SVID_AUDIENCE` and `SPIRE_ISSUER` first (Review focus). Record Route TLS passthrough behavior (spec verification item) and whether the issuer's JWKS fetch from `zt-demo` → `spire` crosses any chart-shipped NetworkPolicy in `spire` (if so, add the allow rule to Task 6's policy and record it).
 
 - [ ] **Step 5: Record findings**

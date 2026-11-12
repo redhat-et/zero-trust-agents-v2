@@ -7,8 +7,8 @@ inside a sandbox. It complements `docs/DEMO_WALKTHROUGH.md` (the runtime
 model, which is identical) and `docs/DEMO_WALKTHROUGH_A2A.md` (the
 agent-to-agent layer).
 
-Status: verified on ROSA 4.22 (amd64), 2026-11-10. Scenarios 1–6, 13 and
-14 pass under `ZT2_DRIVER=openshift`; 11, 12 and 15 are blocked by an
+Status: verified on ROSA 4.22 (amd64), 2026-11-11. Scenarios 1–6, 12, 13
+and 14 pass under `ZT2_DRIVER=openshift`; 11 and 15 are blocked by an
 upstream exposure limitation described below.
 
 ## The driver abstraction
@@ -223,9 +223,10 @@ DENIED /usr/bin/curl(0) -> 198.18.0.2:443 [reason:transparent_tcp_policy_denied]
 
 On Podman the same class of problem is solved with a host-published relay
 (`openshell forward`). The OpenShift driver's `start_relay` is a no-op and
-there is no in-cluster equivalent, so scenarios 11, 12 and 15 — which need
+there is no in-cluster equivalent, so scenarios 11 and 15 — which need
 A to reach B — cannot run yet. This is recorded as a gap, not worked
-around.
+around. Scenario 12 does not need A to reach B: its undeclared hr peer is
+denied by A's supervisor before egress, so it runs and passes.
 
 ## Images
 
@@ -256,7 +257,11 @@ ZT2_DRIVER=openshift scripts/scenario14.sh
 ```
 
 Scenarios 11 and 12 need `LLM_API_KEY`, `LLM_BASE_URL` and `LLM_MODEL` and
-exit 2 without them; 13 and 14 run without a model.
+exit 2 without them; 13, 14 and 15 run without a model. For the MaaS
+endpoint, `LLM_BASE_URL` must include `/v1`: DocsClaw appends
+`/chat/completions`, so a base without `/v1` gets a 503 from the gateway.
+For other OpenAI-compatible endpoints, use the base path the provider
+documents.
 
 Two behaviours differ from Podman and are expected, not failures:
 
@@ -294,5 +299,5 @@ For a short-lived cluster, expiry is the teardown.
   not a policy result.
 - Use `docs/DEMO_WALKTHROUGH_A2A.md` for the agent layer, and
   `docs/DEMO_SCENARIOS.md` for the per-scenario teaching points.
-- Track the in-cluster A2A exposure gap before promising scenarios 11–15
-  on Kubernetes.
+- Track the in-cluster A2A exposure gap before promising scenarios 11 and
+  15 on Kubernetes.

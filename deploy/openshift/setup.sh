@@ -284,5 +284,5 @@ OpenShift demo environment ready.
   minter forward: http://127.0.0.1:${DEMO_PORT} (pid $FORWARD_PID)
   state:          $STATE_DIR/openshift.env
 
-Run scenarios: ZT2_DRIVER=openshift scripts/scenario{1..6}.sh
+Run scenarios: for s in {1..6}; do ZT2_DRIVER=openshift scripts/scenario\$s.sh; done
 EOF

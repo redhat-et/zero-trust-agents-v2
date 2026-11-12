@@ -4,8 +4,8 @@ Date: 2026-10-30, cluster: ROSA 4.22.20 (temporary, ≤ 8 h)
 
 ## Result
 
-**All six scenarios pass on OpenShift** (`ZT2_DRIVER=openshift
-scripts/scenario{1..6}.sh`), and the trust-tier separation is verified:
+**All six scenarios pass on OpenShift** (`ZT2_DRIVER=openshift`, scenarios
+1–6), and the trust-tier separation is verified:
 a pod in `zt2-sandboxes` requesting a gateway-prefix SPIFFE ID
 (`spiffe://openshell.local/ns/openshell/sa/openshell`) is refused
 ("no identity issued") — the over-match the namespace split exists to
