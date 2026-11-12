@@ -4,7 +4,9 @@
 **Goal:** run scenarios 11 (full A2A chain) and 15 (caller allowlist) on a
 fresh OpenShift cluster, using B's native headless Service instead of the
 gateway's exposed-service authority.
-**Status:** design agreed 2026-11-11; implementation not started.
+**Status:** designed 2026-11-11; implemented and tested in-cluster
+2026-11-12. **The native Service cannot expose the app port** — see
+"2026-11-12 in-cluster result". Demo now splits by driver.
 
 ## Why this path
 
@@ -145,21 +147,64 @@ Evidence to record in `docs/dev/zero-trust-stage-b/03-wp-b3-exposure-wiring.md`:
 | Token not minted | supervisor log shows the audience override | Confirm the profile endpoint and override both use the Service FQDN:8000 |
 | Scenario 12 changes | run it | It must stay a deny at `:18810`; do not point it at B |
 
+## 2026-11-12 in-cluster result
+
+Tested on a fresh ROSA 4.22 cluster with the stack up. The mechanism
+exists but does not publish the app:
+
+- `spec.service: true` does create a controller-owned headless Service
+  (`ClusterIP: None`, `ownerReference` to the Sandbox, so it dies with
+  it).
+- The Service is named `sandbox-control`, selects the **workload** pod,
+  and targets **port 5500**. Nothing listens on 5500 there.
+- Decisive: inside B, `curl 127.0.0.1:8000/health` returns `200` while
+  `curl 10.128.0.81:8000/health` (B's own pod IP) is **refused**.
+  DocsClaw listens inside the sandbox's isolated network namespace; the
+  pod IP never serves the app.
+- `openshell-sandbox-workloads` admits ingress only from supervisor
+  pods, port 5500. A peer pod cannot reach the supervisor pod's 5500
+  either (policy drop, not refusal).
+
+A NetworkPolicy was tried and removed: with a pod carrying the exact
+`openshell.ai/boundary-role=supervisor` label, `10.128.0.81:8000` still
+timed out. Pod-network controls cannot reach a namespace they do not
+share.
+
+Consequence: cross-sandbox ingress must go through the supervisor's
+inbound relay, which is the gateway path, whose blocker is the
+supervisor's TLS trust of the self-signed chart certificate (see
+`DEMO_WALKTHROUGH_OPENSHIFT.md`). The native-Service idea solved the
+wrong half of the problem.
+
+Baseline: scenarios 1–6 PASS, and scenario 12 still PASSes with the new
+code. Scenario 11 fails at the POST with `context deadline exceeded`
+after the supervisor correctly publishes the DNS mapping
+(`resolved=10.128.0.81 synthetic=198.18.0.3 ports=8000`) — the token
+side is not the problem.
+
 ## Demo narrative (Friday)
 
-- North–south: laptop → gateway Route → exposed B (scenarios 13/14),
-  gateway enforces the exposed-service auth.
-- East–west: A → B's native Service (scenarios 11/15), supervisor egress
-  policy + minted engineering-analyst token + B's inbound validation and
-  caller allowlist.
-- The gateway is not in the east-west path by design; the gateway-mediated
-  path is blocked by the supervisor's TLS trust of a self-signed chart
-  certificate, which is a dependency-level fix, not a demo blocker.
+- **OpenShift, north–south**: laptop → gateway Route → exposed agent
+  (scenarios 13/14), plus scenario 12's deny. The gateway enforces the
+  exposed-service auth.
+- **Podman, east–west**: A → host relay → B (scenarios 11/15), supervisor
+  egress policy + minted engineering-analyst token + B's inbound
+  validation and caller allowlist.
+- Why the split: the relay is the only working east-west transport we
+  have. On OpenShift the gateway path is blocked by the supervisor's TLS
+  trust of a self-signed chart certificate, and the native Service never
+  exposes the app port (see "2026-11-12 in-cluster result"). The
+  security model is identical on both drivers; only the transport is
+  not yet available in-cluster.
+- Say the limitation as a finding, not a gap: the sandbox boundary is a
+  network namespace, so pod-level controls cannot reach the workload.
+  Ingress has to pass the supervisor's relay.
 
 ## Out of scope today
 
 - OpenShell per-endpoint upstream CA/skip-verify so the gateway can be
-  used for in-cluster A2A.
+  used for in-cluster A2A. Upstream analysis, existing issues, and
+  drafts for the core team: `2026-11-12-openshell-upstream-gaps.md`.
 - A Route in front of the headless Service (adds a router hairpin; not
   needed for east-west).
 - Reproducible DocsClaw image publishing (issue #18).
