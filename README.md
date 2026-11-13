@@ -21,7 +21,7 @@ Successor to [zero-trust-agent-demo](https://github.com/redhat-et/zero-trust-age
 
 ## Quick start (macOS, podman machine)
 
-Requirements: podman (machine running), `openshell` CLI 0.1.6, Go 1.22+,
+Requirements: podman (machine running), `openshell` CLI 0.1.8, Go 1.22+,
 openssl, curl, python3.
 
 ```console
@@ -39,7 +39,7 @@ The setup script adds one line to the podman VM's `/etc/hosts`
 ## Quick start (Fedora/RHEL, rootless podman)
 
 Requirements: podman 5.x (rootless, `systemctl --user enable --now
-podman.socket`), `openshell` CLI 0.1.6 (rpm from upstream releases), Go
+podman.socket`), `openshell` CLI 0.1.8 (rpm from upstream releases), Go
 1.22+, openssl, curl, python3, and sudo for one `/etc/hosts` edit.
 
 ```console

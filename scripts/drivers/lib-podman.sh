@@ -136,6 +136,12 @@ start_relay() {
     return 1
 }
 
+# publish_a2a_peer NAME TARGET_PORT — make a peer agent reachable for
+# A2A. Podman has no native Service, so the host relay is the endpoint.
+publish_a2a_peer() {
+    start_relay "$1" "$2" "$A2A_PORT"
+}
+
 # supervisor_logs ID — print the supervisor container's logs for sandbox
 # ID (scenario 3 greps them for the failed token grant).
 supervisor_logs() {

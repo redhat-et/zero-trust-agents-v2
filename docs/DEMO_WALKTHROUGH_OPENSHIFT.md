@@ -228,6 +228,48 @@ A to reach B — cannot run yet. This is recorded as a gap, not worked
 around. Scenario 12 does not need A to reach B: its undeclared hr peer is
 denied by A's supervisor before egress, so it runs and passes.
 
+### Why the gateway Route cannot be A's in-cluster path
+
+A 2026-11-12 probe tried the two forms that would keep the gateway in the
+east–west path. Both are blocked upstream, not in DocsClaw:
+
+- **Gateway Route + `Host: <authority>`:** works from a plain pod (`200`
+  via `54.164.165.249`), but the same hostname also resolves to
+  `32.193.255.39`, which blackholes. The supervisor mapped both addresses
+  and attempted the dead one, so the sandbox call timed out after 15 s.
+- **Gateway Service `:8080` + `Host: <authority>`:** reachable from a
+  plain pod (`404` for a stale authority). From a sandbox the supervisor
+  logs `ALLOWED … [engine:opa]` and then `NET:FAIL`; the client sees a
+  certificate from `CN=OpenShell Sandbox CA` (the supervisor terminates
+  TLS) followed by `SSL_ERROR_SYSCALL`. The supervisor cannot verify the
+  gateway's self-signed chart certificate on the upstream leg.
+
+A DocsClaw `host_header` option would therefore be necessary but not
+sufficient: the application never controls that upstream TLS handshake.
+`tls: passthrough` would skip the MITM but also disables the L7
+inspection that injects A's minted token; `allow_uninspected_credentials`
+governs credential handling, not upstream TLS trust.
+
+The TLS diagnosis above is a **0.1.6** result. On 0.1.8 the gateway CA can
+be handed to supervisors through
+`supervisor.network.additionalCaConfigMapName`;
+`deploy/openshift/setup.sh` now creates that ConfigMap and sets the value,
+and an inspected egress to the gateway Route completes
+(`OCSF NET:OPEN ALLOWED … engine:opa` followed by a real HTTP response).
+
+Trust is not the only blocker. **A2A scenarios 11 and 15 still do not run
+on OpenShift.** The native headless Service (`spec.service: true`)
+publishes the boundary port 5500 on the workload pod, and the app port is
+bound inside the sandbox's isolated network namespace, so
+`default--<sandbox>.zt2-sandboxes.svc.cluster.local:8000` never answers.
+The 0.1.8 supervisor app listener starts and presents an operator
+certificate, but refuses the request with `DENIED unknown [reason:App
+listener unknown or expired SNI route]`, because route discovery is not
+deployed. Run scenarios 11 and 15 on the Podman driver. The OpenShift demo
+covers the north–south path (scenarios 13 and 14) and the deny in scenario
+12. Upstream status and details:
+`docs/dev/2026-11-12-openshell-upstream-gaps.md`.
+
 ## Images
 
 The cluster is amd64, so both image sources must be real amd64 builds.

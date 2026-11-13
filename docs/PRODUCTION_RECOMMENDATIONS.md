@@ -28,7 +28,7 @@ Two hardening steps for production:
 
 1. Replace the prefix check with the exact gateway SPIFFE ID
    (`spiffe://…/ns/openshell/sa/openshell`) or a small allowlist.
-1. Give each user (or team) their own sandbox namespace and reflect
+2. Give each user (or team) their own sandbox namespace and reflect
    that in the policy, rather than one shared `zt2-sandboxes`. The
    `ClusterSPIFFEID` namespaceSelector makes this a label change.
 
@@ -66,6 +66,76 @@ customer's OIDC discovery endpoint (RS256/ES256 via their JWKS). The
 agent-identity side already demonstrates exactly this pattern — the
 issuer verifies SPIFFE JWT-SVIDs against SPIRE's JWKS over TLS — so
 the extension is symmetric, not novel.
+
+## Replacing the token issuer
+
+The issuer is a demo implementation of a small, standard contract. The
+provider profile's `token_grant` block names the token endpoint, the SVID
+audience, the assertion type, and the subject token source, so repointing
+that block moves the exchange to a different STS. Repointing it is not the
+whole change: resource servers verify access tokens against the issuer's
+`/.well-known/jwks.json` (see "Secrets" above), so a replacement STS must
+publish its signing keys there, and every service must be pointed at that
+JWKS before it will accept the new tokens. Plan both halves together.
+
+### What a replacement must preserve
+
+- `POST /token` accepting the RFC 8693 grant type
+  `urn:ietf:params:oauth:grant-type:token-exchange`.
+- Client authentication from `client_assertion` with type
+  `urn:ietf:params:oauth:client-assertion-type:jwt-spiffe` (RFC 7523 private
+  key JWT), verified against SPIRE's JWKS over TLS: signature, `alg`, `exp`
+  and `nbf`, `iss` equal to SPIRE's OIDC issuer, `aud` containing the
+  profile's `jwt_svid_audience`, and a `sub` this deployment trusts.
+- The two-step exchange: the gateway trades the user subject token for an
+  intermediate token bound to one supervisor's SPIFFE ID, and the supervisor
+  trades that for the final scoped token.
+- A final `scope` equal to the intersection of the user's real entitlements
+  and the requested scope, never the requested scope on its own.
+- `azp` and `client_id` set to the caller's SPIFFE ID, so every minted token
+  is attributable to the workload that requested it.
+- `/.well-known/jwks.json`, so resource servers verify access tokens without
+  holding signing material.
+- The same `iss` value, or an update to every service that pins it. The
+  engineering-analyst agent compares its configured `issuer` against the
+  token's `iss` and rejects any mismatch as `invalid_issuer`
+  (`agents/engineering-analyst/agent-config.yaml.in`), so a replacement STS
+  with a different issuer value needs those values updated in the same
+  migration as the JWKS change. Trusting the new keys does not make a pinned
+  issuer accept them.
+- Distinct error codes: `invalid_client_assertion`,
+  `insufficient_department_permissions`, `invalid_subject_token`,
+  `unsupported_grant_type`. Monitoring depends on telling these causes apart.
+
+### Demo-only pieces to replace
+
+- The `demo_token_use` claim, a branch flag that exists only because one
+  issuer plays both the gateway and supervisor roles. Use two endpoints or
+  two client registrations.
+- The `/demo-subject-token` endpoint, a stand-in for the customer's IdP.
+- The user-to-department map in `internal/config/config.go`. Use IdP group
+  claims or a policy engine.
+- Prefix matching on SPIFFE IDs. Use the exact gateway identity or an
+  allowlist, as described above.
+- Plain-HTTP JWKS and a static signing key. Use TLS with CA pinning, and a
+  KMS-backed key with overlapping rotation.
+
+### Implementation options
+
+1. Extend this issuer. It is Go with minimal dependencies, and its tests are
+   the executable form of the contract in this section.
+2. Use Keycloak token exchange with a custom `ClientAuthenticator` SPI. The
+   `jwt-spiffe` assertion type is not native, so SVID verification is code to
+   write rather than configuration to enable. Validate this path before
+   committing to it.
+3. Put a thin STS in front of the customer's IdP. It verifies workload
+   identity and delegates attribute lookup to the identity system that
+   already governs entitlements.
+
+The two-hop exchange is a design choice, not a requirement. A single
+exchange from the user token plus the supervisor SVID to the final token
+would also work, but then the gateway handles the user token on every
+request path. The two-hop shape is what confines that token to one hop.
 
 ## NetworkPolicy
 

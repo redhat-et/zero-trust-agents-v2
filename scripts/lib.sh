@@ -282,15 +282,25 @@ write_agent_config() {
 # reach.
 start_docsclaw_serve() {
     local name="$1" code
-    code="$("${OS[@]}" sandbox exec --name "$name" --no-tty -- sh -c \
-        "nohup docsclaw serve --config-dir $WORKSPACE_DIR/agent --host 0.0.0.0 --port 8000 >$WORKSPACE_DIR/serve.log 2>&1 & sleep 2; curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health")" || true
-    if [[ "$code" != "200" ]]; then
-        printf "docsclaw serve did not become healthy in %s (got '%s')\n" \
-            "$name" "$code" >&2
-        "${OS[@]}" sandbox exec --name "$name" --no-tty -- sh -c \
-            "cat $WORKSPACE_DIR/serve.log" >&2 || true
-        return 1
-    fi
+    # Launch detached, then poll health in a separate exec. A single
+    # combined exec fails the whole scenario on a transient gateway
+    # transport error, and re-running the launch on a retry would try to
+    # bind port 8000 twice.
+    "${OS[@]}" sandbox exec --name "$name" --no-tty -- sh -c \
+        "nohup docsclaw serve --config-dir $WORKSPACE_DIR/agent --host 0.0.0.0 --port 8000 >$WORKSPACE_DIR/serve.log 2>&1 &" \
+        >/dev/null 2>&1 || true
+    for _ in $(seq 1 10); do
+        code="$("${OS[@]}" sandbox exec --name "$name" --no-tty -- \
+            curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+            http://127.0.0.1:8000/health 2>/dev/null)" || true
+        [[ "$code" == "200" ]] && return 0
+        sleep 3
+    done
+    printf "docsclaw serve did not become healthy in %s (got '%s')\n" \
+        "$name" "$code" >&2
+    "${OS[@]}" sandbox exec --name "$name" --no-tty -- sh -c \
+        "cat $WORKSPACE_DIR/serve.log" >&2 || true
+    return 1
 }
 
 # wait_for_health AGENT_URL [ATTEMPTS] — poll an agent's /health through

@@ -57,6 +57,37 @@ A2A_HR_PORT="${ZT2_A2A_HR_PORT:-18810}"
 start_relay() { :; }
 stop_relay() { :; }
 
+# publish_a2a_peer NAME TARGET_PORT — publish a peer sandbox through the
+# controller's native headless Service (spec.service) rather than the
+# gateway's exposed-service authority. The gateway path is blocked inside
+# a sandbox: the supervisor terminates TLS with its own CA and cannot
+# verify the gateway chart's self-signed certificate. The Service is
+# plain HTTP, which the supervisor already proxies. Updates A2A_HOST and
+# A2A_PORT so render_alice_a2a_profile follows in both the endpoint and
+# the audience override.
+publish_a2a_peer() {
+    local name="$1" port="$2" cr
+    cr="$(oc -n zt2-sandboxes get sandbox -o name 2>/dev/null |
+        sed 's|.*/||' | grep -E -- "--${name}\$" | head -1)" || true
+    if [[ -z "$cr" ]]; then
+        printf "no Sandbox CR found for %s\n" "$name" >&2
+        return 1
+    fi
+    oc -n zt2-sandboxes patch "sandbox/$cr" --type=merge \
+        -p '{"spec":{"service":true}}' >/dev/null || return 1
+    for _ in $(seq 1 30); do
+        if oc -n zt2-sandboxes get svc "$cr" >/dev/null 2>&1; then
+            A2A_HOST="${cr}.zt2-sandboxes.svc.cluster.local"
+            A2A_PORT="$port"
+            echo "  peer published as $A2A_HOST:$A2A_PORT (headless Service)"
+            return 0
+        fi
+        sleep 2
+    done
+    printf "headless Service %s did not appear\n" "$cr" >&2
+    return 1
+}
+
 # service_curl URL [args...] — reach an exposed-service URL from this
 # host. The gateway publishes a *.openshell.localhost authority that
 # nothing resolves, so dial the gateway Route instead and send the

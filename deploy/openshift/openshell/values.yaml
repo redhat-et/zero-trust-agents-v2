@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # OpenShell chart values for the Stage 2 OpenShift deployment.
-# Chart: oci://ghcr.io/nvidia/openshell/helm-chart (v0.1.6).
+# Chart: oci://ghcr.io/nvidia/openshell/helm-chart (v0.1.8).
 #
 # Prerequisite (run first; the chart's preflight checks for it):
 #   oc apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml

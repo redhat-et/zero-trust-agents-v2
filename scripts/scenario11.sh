@@ -15,7 +15,7 @@ echo "  == agent B: create, expose, publish =="
 agent_provider "eng-analyst-prov-$$" zt2-engineering-analyst-v2 alice
 B_ID="$(create_agent_service eng-analyst "eng-analyst-prov-$$" 8000)"
 register_sandbox "$B_ID" >/dev/null
-start_relay eng-analyst 8000 "$A2A_PORT"
+publish_a2a_peer eng-analyst 8000
 
 echo "  == agent A: create =="
 remove_sandbox alice-a2a

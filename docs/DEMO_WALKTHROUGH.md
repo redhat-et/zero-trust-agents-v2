@@ -274,7 +274,7 @@ intersection with OPA at request time.
 
 ### Preflight
 
-Requirements: a running podman machine, openshell 0.1.6, Go 1.22+, openssl,
+Requirements: a running podman machine, openshell 0.1.8, Go 1.22+, openssl,
 curl, python3. Build the demo container images if they are missing:
 
 ```bash
