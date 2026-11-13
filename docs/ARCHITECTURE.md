@@ -209,8 +209,7 @@ pod-selector-tightened, the chart's fallback identity is excluded
 from the `openshell` namespace, and sandboxes live in their own
 `zt2-sandboxes` namespace. A sandbox pod must never be able to obtain
 an SVID under the gateway prefix; the deployment is verified against
-exactly that (see the design doc and
-`docs/dev/openshift-stage2-findings.md`).
+exactly that.
 
 The token issuer verifies SPIRE's JWKS over TLS against the SPIFFE
 trust bundle (a `spiffe-helper` sidecar writes it from the

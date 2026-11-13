@@ -7,8 +7,8 @@
 #
 # OpenShift: no fsGroup/runAsUser are set — SCC admission assigns the
 # namespace's UID range. The chart is expected to run under the
-# restricted SCC; any exception found on-cluster is recorded in
-# docs/dev/openshift-stage2-findings.md.
+# restricted SCC; any exception found on-cluster is documented in
+# docs/DEMO_WALKTHROUGH_OPENSHIFT.md.
 global:
   openshift: true
   spire:
