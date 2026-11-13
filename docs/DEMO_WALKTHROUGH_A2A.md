@@ -262,6 +262,12 @@ default, which the service proxy cannot reach.
 
 ## Running scenarios 11–15
 
+These runs use the Podman driver. On OpenShift, scenarios 11 and 15 are
+blocked by sandbox ingress: the native Service publishes the boundary port
+rather than the app port, and the supervisor app listener has no route
+discovery yet. Run the OpenShift demo with scenarios 12–14 instead; see
+`docs/DEMO_WALKTHROUGH_OPENSHIFT.md`.
+
 The numbers follow the integration plan, so scenarios 7–10 (Stage A,
 single-agent DocsClaw) do not exist here; the gap is explained in
 `docs/DEMO_SCENARIOS.md`.

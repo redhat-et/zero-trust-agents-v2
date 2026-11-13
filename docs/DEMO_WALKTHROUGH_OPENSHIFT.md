@@ -250,14 +250,25 @@ sufficient: the application never controls that upstream TLS handshake.
 inspection that injects A's minted token; `allow_uninspected_credentials`
 governs credential handling, not upstream TLS trust.
 
-The chosen in-cluster path is B's **native headless Service**
-(`spec.service: true`), addressed as
-`default--<sandbox>.zt2-sandboxes.svc.cluster.local:8000` over plain HTTP.
-The supervisor already proxies plain HTTP for the document services and
-injects the minted token for a declared endpoint, so the token flow is
-unchanged and no TLS trust is involved. The gateway stays in the
-north–south path used by scenarios 13 and 14. Implementation is tracked in
-`docs/dev/2026-11-12-a2a-native-service-plan.md`.
+The TLS diagnosis above is a **0.1.6** result. On 0.1.8 the gateway CA can
+be handed to supervisors through
+`supervisor.network.additionalCaConfigMapName`;
+`deploy/openshift/setup.sh` now creates that ConfigMap and sets the value,
+and an inspected egress to the gateway Route completes
+(`OCSF NET:OPEN ALLOWED … engine:opa` followed by a real HTTP response).
+
+Trust is not the only blocker. **A2A scenarios 11 and 15 still do not run
+on OpenShift.** The native headless Service (`spec.service: true`)
+publishes the boundary port 5500 on the workload pod, and the app port is
+bound inside the sandbox's isolated network namespace, so
+`default--<sandbox>.zt2-sandboxes.svc.cluster.local:8000` never answers.
+The 0.1.8 supervisor app listener starts and presents an operator
+certificate, but refuses the request with `DENIED unknown [reason:App
+listener unknown or expired SNI route]`, because route discovery is not
+deployed. Run scenarios 11 and 15 on the Podman driver. The OpenShift demo
+covers the north–south path (scenarios 13 and 14) and the deny in scenario
+12. Upstream status and details:
+`docs/dev/2026-11-12-openshell-upstream-gaps.md`.
 
 ## Images
 

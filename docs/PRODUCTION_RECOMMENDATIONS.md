@@ -69,10 +69,14 @@ the extension is symmetric, not novel.
 
 ## Replacing the token issuer
 
-The issuer is a demo implementation of a small, standard contract. Nothing
-outside the provider profile depends on it: its `token_grant` block names the
-token endpoint, the SVID audience, the assertion type, and the subject token
-source, so pointing that block at a different STS is the whole integration.
+The issuer is a demo implementation of a small, standard contract. The
+provider profile's `token_grant` block names the token endpoint, the SVID
+audience, the assertion type, and the subject token source, so repointing
+that block moves the exchange to a different STS. Repointing it is not the
+whole change: resource servers verify access tokens against the issuer's
+`/.well-known/jwks.json` (see "Secrets" above), so a replacement STS must
+publish its signing keys there, and every service must be pointed at that
+JWKS before it will accept the new tokens. Plan both halves together.
 
 ### What a replacement must preserve
 
