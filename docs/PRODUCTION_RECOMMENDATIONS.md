@@ -96,6 +96,13 @@ JWKS before it will accept the new tokens. Plan both halves together.
   is attributable to the workload that requested it.
 - `/.well-known/jwks.json`, so resource servers verify access tokens without
   holding signing material.
+- The same `iss` value, or an update to every service that pins it. The
+  engineering-analyst agent compares its configured `issuer` against the
+  token's `iss` and rejects any mismatch as `invalid_issuer`
+  (`agents/engineering-analyst/agent-config.yaml.in`), so a replacement STS
+  with a different issuer value needs those values updated in the same
+  migration as the JWKS change. Trusting the new keys does not make a pinned
+  issuer accept them.
 - Distinct error codes: `invalid_client_assertion`,
   `insufficient_department_permissions`, `invalid_subject_token`,
   `unsupported_grant_type`. Monitoring depends on telling these causes apart.
