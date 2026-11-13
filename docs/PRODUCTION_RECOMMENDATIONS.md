@@ -152,8 +152,7 @@ directions — OVN-Kubernetes does.
 The SPIFFE hardened charts run without SCC exceptions apart from the
 CSI driver's DaemonSet, which needs `privileged` (standard for node
 CSI drivers; the chart labels its namespaces accordingly). See
-`docs/dev/openshift-stage2-findings.md` for what was observed
-on-cluster.
+`docs/DEMO_WALKTHROUGH_OPENSHIFT.md` for what was observed on-cluster.
 
 ## Agent-to-agent delegation (roadmap)
 

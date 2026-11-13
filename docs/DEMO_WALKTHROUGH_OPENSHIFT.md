@@ -267,8 +267,7 @@ certificate, but refuses the request with `DENIED unknown [reason:App
 listener unknown or expired SNI route]`, because route discovery is not
 deployed. Run scenarios 11 and 15 on the Podman driver. The OpenShift demo
 covers the north–south path (scenarios 13 and 14) and the deny in scenario
-12. Upstream status and details:
-`docs/dev/2026-11-12-openshell-upstream-gaps.md`.
+12.
 
 ## Images
 

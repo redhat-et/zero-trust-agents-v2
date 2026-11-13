@@ -6,9 +6,9 @@ from the expectation.
 
 ## Scenario numbering
 
-Numbers follow the integration plan
-(`docs/dev/2026-11-06-zt2-docsclaw-integration-plan.md`), not this
-repository's commit order, so there is a deliberate gap:
+Scenario numbers are a stable index rather than a contiguous count: the
+7–10 range is reserved for the single-agent stage, so numbers do not shift
+when scenarios are added:
 
 | Range | Stage | What it covers | Status here |
 | ----- | ----- | -------------- | ----------- |
@@ -16,12 +16,11 @@ repository's commit order, so there is a deliberate gap:
 | 7–10 | Stage A | single-agent DocsClaw: summarise, deny, prompt injection, Carol's path | planned, not implemented |
 | 11–15 | Stage B | agent-to-agent between DocsClaw sandboxes | implemented |
 
-Scenarios 7–10 are specified in §A.6 of the plan. They were never added to
-this repository — the Stage A artifacts are recorded as absent in
-`docs/dev/zero-trust-stage-b/00-index.md` — and the numbering was kept so
-scenario references match the plan. The Stage A *helpers* (the agent
-definition, the `create_sandbox` image parameter, `sandbox_ask`) do exist,
-which is what the Stage B scenarios use.
+Scenarios 7–10 belong to the single-agent stage and are not implemented in
+this repository; the numbers stay reserved so scenario references remain
+stable. The Stage A *helpers* (the agent definition, the `create_sandbox`
+image parameter, `sandbox_ask`) do exist, which is what the Stage B
+scenarios use.
 
 ## Permission matrix
 

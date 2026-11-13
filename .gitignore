@@ -15,3 +15,6 @@ zt2-tmp/
 .superpowers/
 docs/superpowers/
 .DS_Store
+
+# Internal working docs — plans, work packages, runbooks, findings
+docs/dev/
