@@ -214,10 +214,18 @@ nohup oc -n zt-demo port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PO
 FORWARD_PID=$!
 echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT
+ready=0
 for _ in $(seq 1 20); do
-    curl -fsS --max-time 2 "http://127.0.0.1:${KEYCLOAK_PORT}/realms/zt" >/dev/null 2>&1 && break
+    if curl -fsS --max-time 2 "http://127.0.0.1:${KEYCLOAK_PORT}/realms/zt" >/dev/null 2>&1; then
+        ready=1
+        break
+    fi
     sleep 2
 done
+if [[ "$ready" != "1" ]]; then
+    printf "Keycloak did not become ready at http://127.0.0.1:%s\n" "$KEYCLOAK_PORT" >&2
+    exit 1
+fi
 
 echo "== 7/8 provider profiles =="
 OS=(openshell --gateway zt2 --gateway-endpoint "https://$ROUTE_HOST")

@@ -40,17 +40,13 @@ for arg in "$@"; do
 done
 
 echo "== resolving $IMAGE to a digest =="
-# The tag is a multi-arch manifest list; the demo cluster is amd64, and
-# pinning the arch-specific digest is what makes the run reproducible.
-info="$(oc image info "$IMAGE" --filter-by-os=linux/amd64 -o json)" ||
-    { printf "cannot inspect %s (registry access or manifest-list resolution failed)\n" "$IMAGE" >&2; exit 1; }
-resolved="$(printf '%s' "$info" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-print(d.get("digest") or d.get("image", {}).get("digest", ""))
-')"
-[[ -n "$resolved" ]] ||
-    { printf "could not resolve a digest for %s\n" "$IMAGE" >&2; exit 1; }
+# Pin the multi-arch index digest: one tag serves every architecture,
+# and the fixed digest makes the run reproducible. A per-arch digest
+# would break arm64 clusters.
+require_cmd skopeo
+resolved="sha256:$(skopeo inspect --raw "docker://$IMAGE" | sha256sum | cut -d' ' -f1)"
+[[ -n "$resolved" && "$resolved" != "sha256:" ]] ||
+    { printf "could not resolve an index digest for %s\n" "$IMAGE" >&2; exit 1; }
 if [[ -n "${ZT2_KEYCLOAK_IMAGE_DIGEST:-}" && "$ZT2_KEYCLOAK_IMAGE_DIGEST" != "$resolved" ]]; then
     printf "digest mismatch: %s resolves to %s, ZT2_KEYCLOAK_IMAGE_DIGEST is %s\n" \
         "$IMAGE" "$resolved" "$ZT2_KEYCLOAK_IMAGE_DIGEST" >&2
@@ -88,7 +84,10 @@ sed "s|@KEYCLOAK_IMAGE@|$PINNED|" "$DIR/keycloak.yaml" |
 oc -n "$NAMESPACE" rollout status deployment/keycloak --timeout=300s
 
 if ! oc -n "$NAMESPACE" get route keycloak >/dev/null 2>&1; then
-    oc -n "$NAMESPACE" expose svc/keycloak >/dev/null
+    # Edge termination serves the router's wildcard cert, so the printed
+    # https:// URL is real rather than an HTTP route with an https scheme.
+    oc -n "$NAMESPACE" create route edge keycloak \
+        --service=keycloak --port=http >/dev/null
 fi
 route="$(oc -n "$NAMESPACE" get route keycloak -o jsonpath='{.spec.host}')"
 

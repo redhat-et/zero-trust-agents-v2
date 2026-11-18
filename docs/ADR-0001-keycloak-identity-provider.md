@@ -45,8 +45,11 @@ the **exchange engine**.
   claim, and the user's department scopes.
 - The token issuer verifies that token against the realm JWKS (RS256),
   re-checks its `iss`, and derives the department intersection from the
-  verified `groups` claim. Its SVID verification, two-hop exchange,
-  scope intersection, and access-token JWKS are unchanged.
+  verified `groups` claim, which it carries into the intermediate token.
+  Only access tokens issued to a `login-*` client are accepted, so
+  service-account and ID tokens cannot start a user flow. Its SVID
+  verification, two-hop exchange, scope intersection, and access-token
+  JWKS are unchanged.
 - Podman keeps `/demo-subject-token`; only the user-attribute rename
   (`departments` → `groups`) crosses both drivers.
 
