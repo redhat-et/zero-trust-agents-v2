@@ -1,0 +1,113 @@
+# Keycloak for the zt-demo identity plane. Applied by setup-keycloak.sh,
+# which substitutes @KEYCLOAK_IMAGE@ with the pinned
+# image@sha256:digest and creates the keycloak-realm ConfigMap and the
+# keycloak-admin Secret.
+#
+# CVE-2026-114938 (Java4Shell): every supported image bundles an
+# affected OpenJDK. JAVA_OPTS_APPEND must stay on the JVM, and
+# verify-keycloak.sh fails if it is missing.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-data
+  namespace: zt-demo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: zt-demo
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: keycloak
+          image: "@KEYCLOAK_IMAGE@"
+          imagePullPolicy: IfNotPresent
+          args:
+            - start-dev
+            - --import-realm
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            - name: KC_FEATURES
+              value: spiffe
+            - name: KC_HOSTNAME
+              value: http://keycloak.zt-demo.svc:8080
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: JAVA_OPTS_APPEND
+              value: -XX:-UseBASE64Intrinsics
+          readinessProbe:
+            httpGet:
+              path: /realms/zt
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: keycloak-realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            - name: keycloak-data
+              mountPath: /opt/keycloak/data
+      volumes:
+        - name: keycloak-realm
+          configMap:
+            name: keycloak-realm
+        - name: keycloak-data
+          persistentVolumeClaim:
+            claimName: keycloak-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: zt-demo
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

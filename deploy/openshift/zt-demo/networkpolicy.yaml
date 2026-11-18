@@ -38,6 +38,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: zt-demo
+        # The router reaches the Keycloak Route from its own namespace;
+        # without this the edge Route is admitted but never connects.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-ingress
       ports:
         - port: 8080
           protocol: TCP
