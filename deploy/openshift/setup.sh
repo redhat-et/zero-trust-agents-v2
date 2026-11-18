@@ -210,7 +210,7 @@ echo "== 6/8 Keycloak token-acquisition forward =="
 # keeping the UI-less password grant off a Route.
 KEYCLOAK_PORT="${ZT2_KEYCLOAK_LOCAL_PORT:-18082}"
 [[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
-oc -n zt-demo port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PORT}:8080" >/dev/null 2>&1 &
+nohup oc -n zt-demo port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PORT}:8080" >/dev/null 2>&1 &
 FORWARD_PID=$!
 echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT
