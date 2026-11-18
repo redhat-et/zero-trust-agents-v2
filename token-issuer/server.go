@@ -116,6 +116,18 @@ func (s *server) verifySubject(token string) (tokens.Claims, error) {
 	return s.signer.Verify(token)
 }
 
+// isUserSubject reports whether a verified token may start the gateway
+// hop. The demo minter marks its tokens explicitly; a token from the
+// configured IdP is a user token by construction and carries no demo
+// flag.
+func (s *server) isUserSubject(claims tokens.Claims) bool {
+	if claims.String("demo_token_use") == tokens.UseUserSubject {
+		return true
+	}
+	return s.cfg.SubjectTokenIssuer != "" &&
+		claims.String("iss") == s.cfg.SubjectTokenIssuer
+}
+
 // groupsFor returns the departments a subject token grants. A verified
 // groups claim from the IdP is authoritative; the users file is the
 // Podman fallback.
@@ -242,7 +254,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 	supervisorSVID, supErr := s.jwks.VerifySVID(assertion, s.cfg.SupervisorPrefix)
 	switch {
 	case gwErr == nil:
-		if claims.String("demo_token_use") != tokens.UseUserSubject {
+		if !s.isUserSubject(claims) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unsupported_token_use"})
 			return
 		}

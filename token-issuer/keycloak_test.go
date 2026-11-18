@@ -182,3 +182,25 @@ func TestGroupsClaimCannotExceedItself(t *testing.T) {
 		t.Fatalf("want 403, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestIsUserSubject(t *testing.T) {
+	const iss = "http://keycloak.zt-demo.svc:8080/realms/zt"
+	cfg := newTestConfig(t)
+	cfg.SubjectTokenIssuer = iss
+	s := newServer(cfg, nil, testIssuerSigner)
+	cases := []struct {
+		name   string
+		claims tokens.Claims
+		want   bool
+	}{
+		{"keycloak token", tokens.Claims{"iss": iss}, true},
+		{"local user token", tokens.Claims{"demo_token_use": tokens.UseUserSubject}, true},
+		{"local intermediate", tokens.Claims{"demo_token_use": tokens.UseIntermediate}, false},
+		{"foreign issuer", tokens.Claims{"iss": "http://evil.example"}, false},
+	}
+	for _, tc := range cases {
+		if got := s.isUserSubject(tc.claims); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
