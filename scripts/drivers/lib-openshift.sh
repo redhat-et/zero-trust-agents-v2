@@ -28,12 +28,11 @@ HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 # log must target /sandbox (verified 2026-11-10: /sandbox is writable,
 # /workspace returns EACCES).
 WORKSPACE_DIR="/sandbox"
-# A real linux/amd64 build is required: the historical ghcr -openshell-amd64
-# tag was a mislabeled arm64 image (Exec format error on amd64 nodes) and
-# has since been removed from ghcr. Built from ~/work/docsclaw with
-# GOARCH=amd64 against a multi-arch UBI base; the quay repo is public.
-# A reproducible, project-owned build is tracked in #18.
-AGENT_IMAGE="${DOCSCLAW_IMAGE:-quay.io/panni/docsclaw:v2-openshell-amd64-r3}"
+# Agent image: the published DocsClaw 0.21.0 OpenShell variant. That tag
+# is a multi-arch index (amd64 + arm64); the default DocsClaw image is
+# not suitable here because it lacks tar (needed by `sandbox upload`)
+# and the /sandbox workspace. DOCSCLAW_IMAGE overrides for local builds.
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.21.0-openshell}"
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
 ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}"

@@ -297,17 +297,13 @@ The cluster is amd64, so both image sources must be real amd64 builds.
 
 | Image | How it is produced |
 | ----- | ------------------ |
-| `quay.io/panni/zt2-{token-issuer,document-service}:v2` | `deploy/openshift/build-images.sh` on the rhel homelab |
-| DocsClaw agent image | `make image-openshell OPENARCH=amd64` from the DocsClaw checkout, with a multi-arch base |
+| `quay.io/panni/zt2-{token-issuer,document-service}:v2` | `deploy/openshift/build-images.sh` |
+| DocsClaw agent image | `ghcr.io/redhat-et/docsclaw:0.21.0-openshell` (published multi-arch index) |
 
-The DocsClaw image needs care: the historical `-openshell-amd64` tag was a
-mislabeled arm64 image (fails with `Exec format error`), and the driver
-pulls sandbox images with `if_not_present`, so a rebuilt image under the
-same tag is not re-pulled. Publish a fresh tag and point `DOCSCLAW_IMAGE`
-at it. `Containerfile.openshell` currently pins a single-arch arm64
-`ubi-minimal` digest, so an amd64 build fails at `microdnf install -y tar`;
-switch it to the multi-arch `ubi10/ubi-minimal:latest` index until
-redhat-et/docsclaw#131 lands.
+Use the `-openshell` variant, not the default DocsClaw image: the
+OpenShell build adds `tar` (needed by `sandbox upload`) and the
+`/sandbox` workspace the Kubernetes driver mounts. `DOCSCLAW_IMAGE`
+overrides it for a local build.
 
 ## Running the scenarios
 
