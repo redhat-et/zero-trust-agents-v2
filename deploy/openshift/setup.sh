@@ -204,17 +204,18 @@ done
 echo "== 5/8 Keycloak (identity plane) =="
 "$ROOT/deploy/openshift/keycloak/setup-keycloak.sh" --with-spiffe
 
-echo "== 6/8 subject-token minter port-forward =="
-# The unauthenticated /demo-subject-token listener is reached ONLY via
-# port-forward to the pod -- never a Route or Service.
-DEMO_PORT="${ZT2_DEMO_LOCAL_PORT:-18090}"
+echo "== 6/8 Keycloak token-acquisition forward =="
+# Laptop-side token acquisition: the realm issuer is the in-cluster
+# Service, so a loopback forward preserves the canonical `iss` while
+# keeping the UI-less password grant off a Route.
+KEYCLOAK_PORT="${ZT2_KEYCLOAK_LOCAL_PORT:-18082}"
 [[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
-oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
+oc -n zt-demo port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PORT}:8080" >/dev/null 2>&1 &
 FORWARD_PID=$!
 echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT
 for _ in $(seq 1 20); do
-    curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break
+    curl -fsS --max-time 2 "http://127.0.0.1:${KEYCLOAK_PORT}/realms/zt" >/dev/null 2>&1 && break
     sleep 2
 done
 
@@ -279,7 +280,10 @@ for profile in "${PROFILES[@]}"; do
 done
 
 echo "== 8/8 smoke test =="
-SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:${DEMO_PORT}/demo-subject-token?user=alice" |
+SUBJECT_TOKEN="$(curl -fsS -X POST \
+    "http://127.0.0.1:${KEYCLOAK_PORT}/realms/zt/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=login-alice \
+    -d username=alice -d password=alice -d scope=openid |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 "${OS[@]}" provider create --name alice-eng --type zt2-alice-engineering-v2 \
@@ -287,7 +291,8 @@ echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 
 state_set ZT2_DRIVER openshift
 state_set ZT2_GATEWAY_ROUTE "$ROUTE_HOST"
-state_set TOKEN_ISSUER_DEMO_HOST_PORT "$DEMO_PORT"
+state_set ZT2_KEYCLOAK_LOCAL_URL "http://127.0.0.1:${KEYCLOAK_PORT}"
+state_set ZT2_KEYCLOAK_REALM zt
 state_set ZT2_STATE_DIR "$STATE_DIR"
 
 # The port-forward must outlive this script; disarm the EXIT trap.
@@ -299,7 +304,7 @@ OpenShift demo environment ready.
   gateway:        https://$ROUTE_HOST (name zt2, registered)
   token issuer:   http://token-issuer.zt-demo.svc:8080 (in-cluster)
   doc services:   document-{engineering,finance,admin,hr,public}.zt-demo.svc:8080
-  minter forward: http://127.0.0.1:${DEMO_PORT} (pid $FORWARD_PID)
+  keycloak local: http://127.0.0.1:${KEYCLOAK_PORT} (pid $FORWARD_PID)
   state:          $STATE_DIR/openshift.env
 
 Run scenarios: for s in {1..6}; do ZT2_DRIVER=openshift scripts/scenario\$s.sh; done

@@ -47,6 +47,10 @@ spec:
               value: /etc/zt2/access-token-signing-key.pem
             - name: ACCESS_TOKEN_ISSUER
               value: http://token-issuer.zt-demo.svc:8080
+            - name: SUBJECT_TOKEN_ISSUER
+              value: http://keycloak.zt-demo.svc:8080/realms/zt
+            - name: SUBJECT_TOKEN_JWKS_URL
+              value: http://keycloak.zt-demo.svc:8080/realms/zt/protocol/openid-connect/certs
             - name: JWT_SVID_AUDIENCE
               value: http://token-issuer.zt-demo.svc:8080
             - name: SPIRE_ISSUER
