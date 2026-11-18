@@ -124,8 +124,15 @@ func (s *server) isUserSubject(claims tokens.Claims) bool {
 	if claims.String("demo_token_use") == tokens.UseUserSubject {
 		return true
 	}
-	return s.cfg.SubjectTokenIssuer != "" &&
-		claims.String("iss") == s.cfg.SubjectTokenIssuer
+	if s.cfg.SubjectTokenIssuer == "" ||
+		claims.String("iss") != s.cfg.SubjectTokenIssuer {
+		return false
+	}
+	// Only human user tokens start the gateway hop: Keycloak marks access
+	// tokens as Bearer, and the demo's login clients are named login-*.
+	// This rejects ID tokens and client_credentials service-account tokens.
+	return claims.String("typ") == "Bearer" &&
+		strings.HasPrefix(claims.String("azp"), "login-")
 }
 
 // groupsFor returns the departments a subject token grants. A verified
@@ -134,6 +141,12 @@ func (s *server) isUserSubject(claims tokens.Claims) bool {
 func (s *server) groupsFor(claims tokens.Claims) ([]string, bool) {
 	if groups := claims.StringSlice("groups"); len(groups) > 0 {
 		return groups, true
+	}
+	// A token from the configured IdP must not borrow the local users
+	// file: the IdP is the authority on that user's groups.
+	if s.cfg.SubjectTokenIssuer != "" &&
+		claims.String("iss") == s.cfg.SubjectTokenIssuer {
+		return nil, false
 	}
 	user, ok := s.byUser[claims.String("sub")]
 	if !ok {
@@ -279,7 +292,7 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_intermediate_audience", "audience": audience})
 		return
 	}
-	tok, err := s.signer.Sign(tokens.Claims{
+	inter := tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
 		"sub":            userClaims.String("sub"),
 		"aud":            []string{audience},
@@ -289,7 +302,13 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 		"demo_token_use": tokens.UseIntermediate,
 		"iat":            now(),
 		"exp":            now() + intermediateTTL,
-	})
+	}
+	// Carry the verified IdP groups across the hop: the supervisor
+	// authorizes from this claim, never from local config.
+	if groups := userClaims.StringSlice("groups"); len(groups) > 0 {
+		inter["groups"] = groups
+	}
+	tok, err := s.signer.Sign(inter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
 		return

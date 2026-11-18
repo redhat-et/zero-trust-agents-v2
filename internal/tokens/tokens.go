@@ -186,9 +186,12 @@ func (s *Signer) Sign(claims Claims) (string, error) {
 // Verify checks a token against the signer's own public key. The issuer
 // uses this for its subject tokens so it never calls its own JWKS.
 func (s *Signer) Verify(token string) (Claims, error) {
-	_, claims, sig, input, err := parseChecked(token)
+	h, claims, sig, input, err := parseChecked(token)
 	if err != nil {
 		return nil, err
+	}
+	if h.Alg != algES256 {
+		return nil, fmt.Errorf("signer tokens must be %s, got %q", algES256, h.Alg)
 	}
 	return finishVerify(&s.key.PublicKey, algES256, claims, sig, input)
 }
@@ -312,7 +315,7 @@ func (v *JWKSVerifier) refresh() error {
 	}
 	keys := make(map[string]crypto.PublicKey, len(doc.Keys))
 	for _, k := range doc.Keys {
-		if k.Kid == "" {
+		if k.Kid == "" || (k.Use != "" && k.Use != "sig") {
 			continue
 		}
 		pub, err := publicKey(k)

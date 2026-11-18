@@ -193,7 +193,10 @@ func TestIsUserSubject(t *testing.T) {
 		claims tokens.Claims
 		want   bool
 	}{
-		{"keycloak token", tokens.Claims{"iss": iss}, true},
+		{"keycloak user token", tokens.Claims{"iss": iss, "typ": "Bearer", "azp": "login-alice"}, true},
+		{"service account token", tokens.Claims{"iss": iss, "typ": "Bearer", "azp": "spiffe://openshell.local/ns/openshell/sa/openshell"}, false},
+		{"id token", tokens.Claims{"iss": iss, "typ": "ID", "azp": "login-alice"}, false},
+		{"missing typ and azp", tokens.Claims{"iss": iss}, false},
 		{"local user token", tokens.Claims{"demo_token_use": tokens.UseUserSubject}, true},
 		{"local intermediate", tokens.Claims{"demo_token_use": tokens.UseIntermediate}, false},
 		{"foreign issuer", tokens.Claims{"iss": "http://evil.example"}, false},
@@ -202,5 +205,66 @@ func TestIsUserSubject(t *testing.T) {
 		if got := s.isUserSubject(tc.claims); got != tc.want {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestGatewayExchangeCarriesGroups exercises the production path: the
+// gateway copies the IdP's verified groups into the intermediate token,
+// and the supervisor hop authorizes from that claim alone.
+func TestGatewayExchangeCarriesGroups(t *testing.T) {
+	cfg := newTestConfig(t)
+	s := newServer(cfg, nil, testIssuerSigner)
+	sandbox := cfg.SupervisorPrefix + "test"
+	userClaims := tokens.Claims{
+		"sub":    "dave", // deliberately absent from users.yaml
+		"scope":  "openid engineering",
+		"groups": []any{"engineering"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/token", nil)
+	req.Form = url.Values{"audience": {sandbox}}
+	rec := httptest.NewRecorder()
+	s.gatewayExchange(rec, req, userClaims,
+		tokens.Claims{"sub": "spiffe://openshell.local/ns/openshell/sa/openshell"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("gateway hop: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := body["access_token"].(string)
+	inter, err := testIssuerSigner.Verify(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inter.StringSlice("groups"); len(got) != 1 || got[0] != "engineering" {
+		t.Fatalf("intermediate must carry groups, got %v", got)
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/token", nil)
+	req2.Form = url.Values{"audience": {"engineering"}, "scope": {"engineering"}}
+	rec2 := httptest.NewRecorder()
+	s.handleSupervisorExchange(rec2, req2, inter, tokens.Claims{"sub": sandbox})
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("supervisor hop: want 200, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+}
+
+func TestVerifySubjectRejectsSpoofedIssuer(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const iss = "http://keycloak.zt-demo.svc:8080/realms/zt"
+	s := keycloakTestServer(t, iss, keycloakJWKS(t, &key.PublicKey, "kc-1"))
+	// The local ES256 signer, but the token claims the realm as issuer.
+	tok, err := testIssuerSigner.Sign(tokens.Claims{
+		"iss": iss, "sub": "alice", "exp": time.Now().Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.verifySubject(tok); err == nil {
+		t.Fatal("want error for an ES256 token claiming the realm issuer")
 	}
 }
