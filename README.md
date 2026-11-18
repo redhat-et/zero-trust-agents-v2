@@ -79,7 +79,7 @@ host — the quick starts above) and OpenShift/ROSA
 | `deploy/podman/` | SPIRE configs, gateway/services scripts, provider profiles |
 | `deploy/openshift/` | Helm values, manifests, and setup for ROSA/OpenShift |
 | `scripts/` | setup, teardown, one script per scenario, and the driver harness |
-| `config/users.yaml` | demo users and departments |
+| `config/users.yaml` | demo users and groups |
 
 Derived from NVIDIA's OpenShell `spiffe-token-exchange-demo` (Apache-2.0)
 and the v1 demo's document/user data. License: Apache-2.0.

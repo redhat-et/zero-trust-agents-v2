@@ -162,7 +162,7 @@ func TestFinalExchangeUnknownUser(t *testing.T) {
 	}
 	status, body := postToken(t, ts, supervisorForm(tok, "engineering", "engineering"))
 	if status != http.StatusForbidden || body["error"] != "insufficient_department_permissions" {
-		t.Fatalf("want 403 for unknown user (no departments), got %d %v", status, body)
+		t.Fatalf("want 403 for unknown user (no groups), got %d %v", status, body)
 	}
 }
 

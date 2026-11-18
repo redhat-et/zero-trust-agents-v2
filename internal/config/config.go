@@ -1,4 +1,4 @@
-// Package config loads demo configuration: users with departments, and
+// Package config loads demo configuration: users with groups, and
 // the SPIFFE/token-issuer wiring. Values are tuned for the Stage 1
 // Podman deployment; every field can be overridden by environment
 // variable inside Load.
@@ -13,9 +13,9 @@ import (
 )
 
 type User struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Departments []string `yaml:"departments"`
+	ID     string   `yaml:"id"`
+	Name   string   `yaml:"name"`
+	Groups []string `yaml:"groups"`
 }
 
 // Agent is an A2A audience: the scope it requires is the minimum the
@@ -100,7 +100,7 @@ func Load(path string) (*Config, error) {
 
 // loadAgents reads agent audiences from path and rejects the configs
 // that would otherwise misroute silently: empty or duplicate audiences,
-// names that collide with departments, and agents with no scopes.
+// names that collide with groups, and agents with no scopes.
 func loadAgents(path string) ([]Agent, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

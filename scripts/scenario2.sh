@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Scenario 2: Alice's sandbox with hr capability fetches an engineering
-# doc. Expected: DENIED — alice's departments (engineering, finance) do
+# doc. Expected: DENIED — alice's groups (engineering, finance) do
 # not intersect the hr capability, so no token carries the engineering
 # scope. The intersection is enforced at token-mint time.
 set -euo pipefail

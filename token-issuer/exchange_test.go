@@ -62,7 +62,7 @@ func subjectToken(t *testing.T, user string) string {
 		"sub":            user,
 		"aud":            []string{"openshell-gateway", "account"},
 		"scope":          "openid profile email",
-		"departments":    []string{"engineering", "finance"},
+		"groups":         []string{"engineering", "finance"},
 		"demo_token_use": tokens.UseUserSubject,
 		"iat":            time.Now().Unix(),
 		"exp":            time.Now().Add(30 * time.Minute).Unix(),

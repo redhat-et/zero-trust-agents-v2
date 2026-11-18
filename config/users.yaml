@@ -1,10 +1,10 @@
 users:
   - id: alice
     name: Alice
-    departments: [engineering, finance]
+    groups: [engineering, finance]
   - id: bob
     name: Bob
-    departments: [finance, admin]
+    groups: [finance, admin]
   - id: carol
     name: Carol
-    departments: [hr]
+    groups: [hr]

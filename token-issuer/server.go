@@ -127,7 +127,7 @@ func (s *server) groupsFor(claims tokens.Claims) ([]string, bool) {
 	if !ok {
 		return nil, false
 	}
-	return user.Departments, true
+	return user.Groups, true
 }
 
 // DemoHandler exposes the loopback-only demo routing for tests.
@@ -173,7 +173,7 @@ func (s *server) handleSubjectToken(w http.ResponseWriter, r *http.Request) {
 		"sub":            user.ID,
 		"aud":            []string{"openshell-gateway", "account"},
 		"scope":          "openid profile email",
-		"departments":    user.Departments,
+		"groups":         user.Groups,
 		"demo_token_use": tokens.UseUserSubject,
 		"iat":            now(),
 		"exp":            now() + 1800,
@@ -391,9 +391,9 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func intersect(departments, requested []string) []string {
-	set := make(map[string]bool, len(departments))
-	for _, d := range departments {
+func intersect(groups, requested []string) []string {
+	set := make(map[string]bool, len(groups))
+	for _, d := range groups {
 		set[d] = true
 	}
 	var out []string
