@@ -50,7 +50,7 @@ spec:
             - name: JWT_SVID_AUDIENCE
               value: http://token-issuer.zt-demo.svc:8080
             - name: SPIRE_ISSUER
-              value: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local
+              value: spiffe://openshell.local
             - name: SPIRE_JWKS_URI
               value: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local/keys
             - name: SPIRE_JWKS_CA_FILE

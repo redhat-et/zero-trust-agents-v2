@@ -39,7 +39,7 @@ spec:
         - "-socketPath"
         - "/spiffe-workload-api/spire-agent.sock"
         - "-audience"
-        - "http://token-issuer.zt-demo.svc:8080"
+        - "@SVID_AUDIENCE@"
       volumeMounts:
         - name: spiffe-workload-api
           mountPath: /spiffe-workload-api

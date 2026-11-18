@@ -180,6 +180,25 @@
       "optionalClientScopes": []
     },
     {
+      "clientId": "spiffe://openshell.local/ns/openshell/sa/openshell",
+      "name": "Gateway (SPIFFE)",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "federated-jwt",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "attributes": {
+        "jwt.credential.issuer": "spiffe-idp",
+        "jwt.credential.sub": "spiffe://openshell.local/ns/openshell/sa/openshell",
+        "standard.token.exchange.enabled": "true",
+        "access.token.lifespan": "300"
+      },
+      "defaultClientScopes": ["basic", "groups"],
+      "optionalClientScopes": []
+    },
+    {
       "clientId": "engineering",
       "name": "Audience: engineering",
       "enabled": true,

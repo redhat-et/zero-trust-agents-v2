@@ -235,8 +235,11 @@ fetch_supervisor_svid() {
 # container locator cannot reliably attribute ephemeral containers, so
 # the fetch fails.)
 fetch_gateway_svid() {
+    local audience="${ZT2_SVID_AUDIENCE:-http://token-issuer.zt-demo.svc:8080}"
     oc -n openshell delete pod zt2-gw-svid --ignore-not-found >/dev/null 2>&1 || true
-    oc -n openshell apply -f "$ROOT/deploy/openshift/svid-helper-gateway.yaml" >/dev/null
+    sed "s|@SVID_AUDIENCE@|$audience|" \
+        "$ROOT/deploy/openshift/svid-helper-gateway.yaml" |
+        oc -n openshell apply -f - >/dev/null
     local phase=""
     for _ in $(seq 1 30); do
         phase="$(oc -n openshell get pod zt2-gw-svid -o jsonpath='{.status.phase}' 2>/dev/null || true)"

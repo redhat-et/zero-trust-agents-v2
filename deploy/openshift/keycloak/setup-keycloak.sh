@@ -99,8 +99,29 @@ state_set ZT2_KEYCLOAK_JWKS_URL "${issuer}/protocol/openid-connect/certs"
 state_set ZT2_KEYCLOAK_ROUTE "$route"
 
 if [[ "$WITH_SPIFFE" == "1" ]]; then
-    echo "== SPIFFE identity provider =="
-    echo "notice: --with-spiffe is a no-op until the sidecar patch lands"
+    echo "== SPIFFE identity provider: trusting the SPIRE CA =="
+    spire_pod="$(oc -n spire get pods \
+        -l app.kubernetes.io/instance=spire,app.kubernetes.io/name=server \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    [[ -n "$spire_pod" ]] || spire_pod="$(oc -n spire get pod spire-server-0 \
+        -o jsonpath='{.metadata.name}' 2>/dev/null || true)"
+    [[ -n "$spire_pod" ]] ||
+        { printf "no SPIRE server pod found; run the SPIRE stage first or drop --with-spiffe\n" >&2; exit 1; }
+    bundle="$(oc -n spire exec "$spire_pod" -c spire-server -- \
+        /opt/spire/bin/spire-server bundle show -format pem)" ||
+        { printf "could not read the SPIRE trust bundle\n" >&2; exit 1; }
+    oc -n "$NAMESPACE" create secret generic keycloak-spire-ca \
+        --from-literal=bundle.pem="$bundle" \
+        --dry-run=client -o yaml |
+        oc apply -f - >/dev/null
+    # Keycloak 26.8 has no generic outbound truststore option, so an
+    # init container converts the single CA certificate to PKCS12 and
+    # the JVM points at it. This also replaces the default public CA
+    # store; Keycloak makes no other outbound TLS calls in this demo.
+    patch_json="$(sed "s|@KEYCLOAK_IMAGE@|$PINNED|" "$DIR/keycloak-spiffe-patch.json")"
+    oc -n "$NAMESPACE" patch deployment keycloak --type=strategic -p "$patch_json" >/dev/null ||
+        { printf "could not patch the Keycloak deployment for SPIFFE\n" >&2; exit 1; }
+    oc -n "$NAMESPACE" rollout status deployment/keycloak --timeout=300s
 fi
 
 "$DIR/verify-keycloak.sh"
