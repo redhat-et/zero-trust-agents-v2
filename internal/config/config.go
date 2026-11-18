@@ -41,16 +41,18 @@ var DepartmentAudiences = map[string]bool{
 }
 
 type Config struct {
-	Users            []User
-	Agents           []Agent
-	GatewayPrefix    string
-	SupervisorPrefix string
-	SPIREIssuer      string
-	JWKSURI          string
-	SVIDAudience     string
-	TokenIssuer      string
-	ListenAddr       string
-	SigningKeyFile   string
+	Users               []User
+	Agents              []Agent
+	GatewayPrefix       string
+	SupervisorPrefix    string
+	SPIREIssuer         string
+	JWKSURI             string
+	SVIDAudience        string
+	TokenIssuer         string
+	ListenAddr          string
+	SigningKeyFile      string
+	SubjectTokenIssuer  string
+	SubjectTokenJWKSURL string
 }
 
 // envOr returns the environment value for key, or def when it is unset
@@ -81,16 +83,18 @@ func Load(path string) (*Config, error) {
 	}
 	spireIssuer := envOr("SPIRE_ISSUER", "http://spire-oidc:8080")
 	return &Config{
-		Users:            uf.Users,
-		Agents:           agents,
-		GatewayPrefix:    envOr("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/gateway/"),
-		SupervisorPrefix: envOr("SUPERVISOR_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/sandbox/"),
-		SPIREIssuer:      spireIssuer,
-		JWKSURI:          envOr("SPIRE_JWKS_URI", spireIssuer+"/keys"),
-		SVIDAudience:     envOr("JWT_SVID_AUDIENCE", "http://token-issuer.zt-demo.svc"),
-		TokenIssuer:      envOr("ACCESS_TOKEN_ISSUER", "http://token-issuer.zt-demo.svc"),
-		ListenAddr:       envOr("PORT", ":8080"),
-		SigningKeyFile:   envOr("ACCESS_TOKEN_SIGNING_KEY_FILE", "/etc/zt2/access-token-signing-key.pem"),
+		Users:               uf.Users,
+		Agents:              agents,
+		GatewayPrefix:       envOr("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/gateway/"),
+		SupervisorPrefix:    envOr("SUPERVISOR_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/sandbox/"),
+		SPIREIssuer:         spireIssuer,
+		JWKSURI:             envOr("SPIRE_JWKS_URI", spireIssuer+"/keys"),
+		SVIDAudience:        envOr("JWT_SVID_AUDIENCE", "http://token-issuer.zt-demo.svc"),
+		TokenIssuer:         envOr("ACCESS_TOKEN_ISSUER", "http://token-issuer.zt-demo.svc"),
+		ListenAddr:          envOr("PORT", ":8080"),
+		SigningKeyFile:      envOr("ACCESS_TOKEN_SIGNING_KEY_FILE", "/etc/zt2/access-token-signing-key.pem"),
+		SubjectTokenIssuer:  envOr("SUBJECT_TOKEN_ISSUER", ""),
+		SubjectTokenJWKSURL: envOr("SUBJECT_TOKEN_JWKS_URL", ""),
 	}, nil
 }
 

@@ -1,14 +1,17 @@
 package tokens
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -436,5 +439,115 @@ func TestJWKSVerifierThrottlesUnknownKid(t *testing.T) {
 	}
 	if got := atomic.LoadInt64(&hits); got != 1 {
 		t.Errorf("unknown-kid tokens must not refetch inside the retry window, got %d fetches", got)
+	}
+}
+
+// RS256 support: Keycloak signs user tokens with an RSA key. The
+// verifier must accept that key type without weakening the algorithm
+// guard.
+
+func signRS256(t *testing.T, key *rsa.PrivateKey, kid string, c Claims) string {
+	t.Helper()
+	hdr, err := json.Marshal(header{Alg: algRS256, Typ: "JWT", Kid: kid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := b64.EncodeToString(hdr) + "." + b64.EncodeToString(payload)
+	digest := sha256.Sum256([]byte(input))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return input + "." + b64.EncodeToString(sig)
+}
+
+func rsaJWKS(t *testing.T, key *rsa.PublicKey, kid string) *httptest.Server {
+	t.Helper()
+	doc := jwksDoc{Keys: []jwk{{
+		Kty: "RSA",
+		Kid: kid,
+		Alg: algRS256,
+		Use: "sig",
+		N:   b64.EncodeToString(key.N.Bytes()),
+		E:   b64.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+	}}}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	}))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func TestJWKSVerifierAcceptsRS256(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := NewJWKSVerifier(rsaJWKS(t, &key.PublicKey, "rsa-1").URL)
+	got, err := v.Verify(signRS256(t, key, "rsa-1", testClaims()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["sub"] != "alice" {
+		t.Fatalf("unexpected claims: %v", got)
+	}
+}
+
+func TestJWKSVerifierRejectsAlgNoneOnRSAKey(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := NewJWKSVerifier(rsaJWKS(t, &key.PublicKey, "rsa-1").URL)
+	payload, _ := json.Marshal(testClaims())
+	hdr := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT","kid":"rsa-1"}`))
+	tok := hdr + "." + base64.RawURLEncoding.EncodeToString(payload) + "."
+	if _, err := v.Verify(tok); err == nil {
+		t.Fatal("want error for alg: none even with an RSA key")
+	}
+}
+
+func TestJWKSVerifierRejectsAlgHS256OnRSAKey(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := NewJWKSVerifier(rsaJWKS(t, &key.PublicKey, "rsa-1").URL)
+	payload, _ := json.Marshal(testClaims())
+	hdr := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT","kid":"rsa-1"}`))
+	input := hdr + "." + base64.RawURLEncoding.EncodeToString(payload)
+	digest := sha256.Sum256([]byte(input))
+	tok := input + "." + base64.RawURLEncoding.EncodeToString(digest[:])
+	if _, err := v.Verify(tok); err == nil {
+		t.Fatal("want error for alg: HS256")
+	}
+}
+
+func TestJWKSVerifierRejectsRS256AgainstECKey(t *testing.T) {
+	// The token names a kid that resolves to an EC key; the algorithm
+	// must not be downgraded or reinterpreted.
+	ec := newTestSigner(t)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		raw, _ := ec.PublicJWKS()
+		_, _ = w.Write(raw)
+	}))
+	defer ts.Close()
+	v := NewJWKSVerifier(ts.URL)
+	tok := signRS256(t, key, ec.Kid(), testClaims())
+	if _, err := v.Verify(tok); err == nil {
+		t.Fatal("want error when an RS256 token names an EC key")
 	}
 }

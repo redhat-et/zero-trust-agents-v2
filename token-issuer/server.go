@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ type server struct {
 	cfg         *config.Config
 	signer      *tokens.Signer
 	jwks        JWKSVerifier
+	subject     *tokens.JWKSVerifier
 	mux         *http.ServeMux
 	byUser      map[string]config.User
 	agentScopes map[string][]string
@@ -47,6 +49,9 @@ func newServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *se
 	}
 	for _, u := range cfg.Users {
 		s.byUser[u.ID] = u
+	}
+	if cfg.SubjectTokenJWKSURL != "" {
+		s.subject = tokens.NewJWKSVerifier(cfg.SubjectTokenJWKSURL)
 	}
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /.well-known/jwks.json", s.handleJWKS)
@@ -89,6 +94,41 @@ func NewDemoServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer)
 
 // Handler exposes the routing for tests.
 func (s *server) Handler() http.Handler { return s.mux }
+
+// verifySubject accepts either a Keycloak user token (the OpenShift
+// identity provider) or the demo minter's own token (Podman). The
+// issuer claim only routes to a verifier: the chosen verifier checks the
+// signature and the issuer is re-checked after verification.
+func (s *server) verifySubject(token string) (tokens.Claims, error) {
+	if s.subject != nil && s.cfg.SubjectTokenIssuer != "" {
+		if peek, err := tokens.Parse(token); err == nil &&
+			peek.String("iss") == s.cfg.SubjectTokenIssuer {
+			claims, err := s.subject.Verify(token)
+			if err != nil {
+				return nil, err
+			}
+			if claims.String("iss") != s.cfg.SubjectTokenIssuer {
+				return nil, errors.New("subject token issuer mismatch")
+			}
+			return claims, nil
+		}
+	}
+	return s.signer.Verify(token)
+}
+
+// groupsFor returns the departments a subject token grants. A verified
+// groups claim from the IdP is authoritative; the users file is the
+// Podman fallback.
+func (s *server) groupsFor(claims tokens.Claims) ([]string, bool) {
+	if groups := claims.StringSlice("groups"); len(groups) > 0 {
+		return groups, true
+	}
+	user, ok := s.byUser[claims.String("sub")]
+	if !ok {
+		return nil, false
+	}
+	return user.Departments, true
+}
 
 // DemoHandler exposes the loopback-only demo routing for tests.
 func (s *server) DemoHandler() http.Handler { return s.demoMux }
@@ -189,7 +229,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, err := s.signer.Verify(subjectToken)
+	claims, err := s.verifySubject(subjectToken)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_subject_token"})
 		return
@@ -311,14 +351,14 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	user, ok := s.byUser[claims.String("sub")]
+	groups, ok := s.groupsFor(claims)
 	if !ok {
-		// Unknown users have no departments: empty intersection.
+		// No IdP groups and no local user: empty intersection.
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "insufficient_department_permissions"})
 		return
 	}
 	requested := strings.Fields(r.Form.Get("scope"))
-	intersection := intersect(user.Departments, requested)
+	intersection := intersect(groups, requested)
 	// The rule decides what the intersection must contain. The minted
 	// scope is never narrowed beyond the intersection itself.
 	if !rule.allows(intersection) {
@@ -330,7 +370,7 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 
 	tok, err := s.signer.Sign(tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
-		"sub":            user.ID,
+		"sub":            claims.String("sub"),
 		"aud":            []string{audience, "account"},
 		"scope":          strings.Join(intersection, " "),
 		"azp":            supervisorSVID.String("sub"),
