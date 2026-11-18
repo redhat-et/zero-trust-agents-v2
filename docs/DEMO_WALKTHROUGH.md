@@ -18,7 +18,7 @@ The demo separates three questions that are easy to conflate:
 
 | Layer | Question | Configured in | Runtime artifact |
 | ----- | -------- | ------------- | ---------------- |
-| Human identity | Who is the user? | `config/users.yaml` | subject token, `sub` + `departments` |
+| Human identity | Who is the user? | `config/users.yaml` | subject token, `sub` + `groups` |
 | Capability | What may the agent do? | provider profile (`deploy/podman/profiles/*.yaml.in`) | scopes and audience in the token grant |
 | Workload identity | Which process is acting? | SPIRE registration entry | SPIFFE SVID for the sandbox |
 
@@ -176,7 +176,7 @@ sequenceDiagram
 
 | Token | Minted by | Presented by | `aud` | `scope` | Distinguishing claims |
 | ----- | --------- | ------------ | ----- | ------- | --------------------- |
-| Subject | demo minter | gateway, to the issuer | `openshell-gateway`, `account` | `openid profile email` | `sub`, `departments`, `demo_token_use=user_subject` |
+| Subject | demo minter | gateway, to the issuer | `openshell-gateway`, `account` | `openid profile email` | `sub`, `groups`, `demo_token_use=user_subject` |
 | Intermediate | issuer | supervisor, to the issuer | sandbox SPIFFE ID | copied from subject | `azp=gateway SVID`, `demo_token_use=intermediate` |
 | Final | issuer | supervisor, to the document service | department, `account` | the intersection | `azp=supervisor SVID`, `demo_token_use=final` |
 
@@ -191,16 +191,18 @@ Why three tokens instead of one:
   intersection succeeds.
 - `demo_token_use` is a branch discriminator: a token minted for one
   exchange step cannot be replayed in another.
-- The issuer re-reads the user's departments from `config/users.yaml` by
-  `sub` instead of trusting the subject token's claim.
+- The issuer uses the verified `groups` claim from the IdP (Keycloak) and
+  falls back to `config/users.yaml` by `sub` on Podman, instead of
+  trusting an unverified claim.
 
 ## The simulated IdP
 
-`GET :8090/demo-subject-token?user=alice` is the demo's stand-in for a
-human IdP. In production, Alice authenticates to Keycloak, Entra ID, or
-Okta, and the resulting OAuth2 access token is stored in the provider.
-The demo fabricates that token from `config/users.yaml` with no
-authentication.
+On Podman, `GET :8090/demo-subject-token?user=alice` is the stand-in for
+a human IdP; it fabricates a token from `config/users.yaml` with no
+authentication. On OpenShift, Keycloak issues that token by password
+grant (see `docs/DEMO_WALKTHROUGH_OPENSHIFT.md`); in production Alice
+authenticates to the customer's IdP and the resulting OAuth2 access
+token is stored in the provider.
 
 The listener split is deliberate:
 
@@ -210,8 +212,9 @@ The listener split is deliberate:
 | `:8090` | `GET /demo-subject-token` | the laptop, and containers on the `zt2` network | host publish is loopback-only; the listener binds all interfaces inside the container |
 
 If the minter shared `:8080`, publishing the authenticated endpoint
-would also publish "mint a token as any user". On OpenShift the minter
-is reachable only through `oc port-forward`, never a Route or Service.
+would also publish "mint a token as any user". On OpenShift the minter is
+not used; Keycloak's token endpoint is reached through a loopback
+`oc port-forward`, never a Route or Service.
 
 Host publication and container-network reachability are different
 things. The host port is bound to `127.0.0.1`, but the issuer container
@@ -225,10 +228,10 @@ Subject token claims:
 | Claim | Meaning |
 | ----- | ------- |
 | `iss` | the demo issuer |
-| `sub` | the user; authoritative departments are looked up by this value |
+| `sub` | the user; authoritative groups are looked up by this value |
 | `aud` | `openshell-gateway`, `account`; intended for the gateway exchange |
 | `scope` | generic OIDC scopes, deliberately not the capability |
-| `departments` | realistic IdP attribute, used for teaching; not trusted at mint |
+| `groups` | realistic IdP attribute, used for teaching; not trusted at mint |
 | `demo_token_use` | `user_subject`, the exchange branch discriminator |
 | `exp` | 30 minutes; scenarios mint a fresh token each run |
 
@@ -254,7 +257,7 @@ flowchart TD
 | Checkpoint | Where | Decision |
 | ---------- | ----- | -------- |
 | Workload identity | `token-issuer/server.go`, `handleToken` | The client assertion must verify as a gateway or supervisor SVID under the registered prefix. |
-| Capability | `token-issuer/server.go`, `handleSupervisorExchange` | `user.departments` intersected with the requested scope must be non-empty, except for `audience=public`, which mints an empty scope; otherwise the minted scope is exactly the intersection. |
+| Capability | `token-issuer/server.go`, `handleSupervisorExchange` | `user.groups` intersected with the requested scope must be non-empty, except for `audience=public`, which mints an empty scope; otherwise the minted scope is exactly the intersection. |
 | Resource policy | `document-service/server.go`, `authenticate` and `hasScope` | The final token's `aud` must name this department, and its scope must cover the document's required departments. |
 
 The gateway branch also requires `demo_token_use=user_subject` and
@@ -408,7 +411,7 @@ Scenarios 1, 2, 5, and 6 print decoded JWTs at the points where tokens exist:
 | Scenario | Decoded tokens | Teaching point |
 | -------- | -------------- | -------------- |
 | 1 | subject | identity and attributes, not capability; the final token is injected by the supervisor and never visible |
-| 2 | subject, intermediate | the intermediate has no `hr` scope and no departments |
+| 2 | subject, intermediate | the intermediate has no `hr` scope and no groups |
 | 5 | rogue SVID | the SPIFFE ID the issuer prefix-checks is outside the supervisor path |
 | 6 | intermediate, final | capability appears only in the final token |
 
@@ -423,8 +426,8 @@ fastest way to explain the chain without reading code.
 
 | Token | Key claims | What the claims show |
 | ----- | ---------- | -------------------- |
-| Subject (scenario 2) | `sub: alice`, `departments: [engineering, finance]`, `scope: openid profile email` | identity and attributes, not capability |
-| Intermediate (scenario 2) | `aud: [sandbox SPIFFE ID]`, `scope: openid profile email`, no `departments` | delegation is audience-bound and carries no capability |
+| Subject (scenario 2) | `sub: alice`, `groups: [engineering, finance]`, `scope: openid profile email` | identity and attributes, not capability |
+| Intermediate (scenario 2) | `aud: [sandbox SPIFFE ID]`, `scope: openid profile email`, no `groups` | delegation is audience-bound and carries no capability |
 | Rogue SVID (scenario 5) | `alg: ES256`, `sub: spiffe://openshell.local/rogue/workload/1`, `iss: http://spire-oidc:8080` | the SPIFFE ID the issuer prefix-checks; the 401 shows the assertion was refused |
 | Final (scenario 6) | `aud: [engineering, account]`, `scope: engineering`, `azp: supervisor SPIFFE ID` | capability appears only after the intersection |
 
@@ -443,10 +446,10 @@ traceback when a segment is not a JWT.
 
 Scenario 2 is the clearest single demonstration of mint-time denial:
 
-1. Alice's subject token carries `departments: [engineering, finance]`.
+1. Alice's subject token carries `groups: [engineering, finance]`.
 2. The `alice-hr` profile requests `scopes: [hr]` with `audience: engineering`.
 3. The issuer mints the intermediate token with `aud` set to the sandbox
-   SPIFFE ID, `scope: openid profile email`, and no departments claim.
+   SPIFFE ID, `scope: openid profile email`, and no groups claim.
 4. The supervisor requests the final token with `audience=engineering` and `scope=hr`.
 5. The issuer intersects `{engineering, finance}` with `{hr}`, gets the
    empty set, and returns `403 insufficient_department_permissions`. No
@@ -496,7 +499,7 @@ proxy's `502`.
 | Provider | A profile instance with a real credential value. |
 | SVID | SPIFFE Verifiable Identity Document, issued by SPIRE. |
 | Workload API | The Unix socket through which a workload requests its SVID. |
-| Intersection | `user.departments` intersected with the requested scope. |
+| Intersection | `user.groups` intersected with the requested scope. |
 
 ## Next steps
 

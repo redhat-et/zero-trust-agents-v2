@@ -24,7 +24,8 @@ scenarios use.
 
 ## Permission matrix
 
-Users and their departments (from `config/users.yaml`):
+Users and their departments (Keycloak groups on OpenShift;
+`config/users.yaml` on Podman):
 
 | User   | Departments          |
 |--------|----------------------|

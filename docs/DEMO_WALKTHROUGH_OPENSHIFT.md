@@ -7,9 +7,10 @@ inside a sandbox. It complements `docs/DEMO_WALKTHROUGH.md` (the runtime
 model, which is identical) and `docs/DEMO_WALKTHROUGH_A2A.md` (the
 agent-to-agent layer).
 
-Status: verified on ROSA 4.22 (amd64), 2026-11-11. Scenarios 1–6, 12, 13
-and 14 pass under `ZT2_DRIVER=openshift`; 11 and 15 are blocked by an
-upstream exposure limitation described below.
+Status: verified on ROSA 4.22 (amd64), 2026-11-18. Scenarios 1–6 pass
+under `ZT2_DRIVER=openshift` with Keycloak as the identity provider; 11
+and 15 remain blocked by the upstream exposure limitation described
+below.
 
 ## The driver abstraction
 
@@ -33,7 +34,7 @@ ZT2_DRIVER=openshift scripts/scenario1.sh
 
 ## What `setup.sh` creates
 
-The script is idempotent and runs in seven phases. On a fresh cluster it
+The script is idempotent and runs in eight phases. On a fresh cluster it
 takes several minutes.
 
 | Phase | Creates |
@@ -42,9 +43,30 @@ takes several minutes.
 | 2 | Agent Sandbox controller and the `sandboxes.agents.x-k8s.io` CRD |
 | 3 | OpenShell gateway StatefulSet, its `openshell` namespace and a TLS-passthrough Route |
 | 4 | Token issuer (with a `spiffe-helper` sidecar) and five document services, plus a default-deny NetworkPolicy |
-| 5 | A `oc port-forward` to the loopback-only subject-token minter |
-| 6 | Gateway registration (`--local` mTLS with the chart's client bundle) and the profiles |
-| 7 | A smoke provider for Alice, then writes `openshift.env` |
+| 5 | Keycloak, the `zt` realm, and the per-user login clients (see below) |
+| 6 | A `oc port-forward` to Keycloak for laptop-side token acquisition |
+| 7 | Gateway registration (`--local` mTLS with the chart's client bundle) and the profiles |
+| 8 | A smoke provider for Alice using a Keycloak subject token, then `openshift.env` |
+
+## Identity provider: Keycloak
+
+Keycloak issues the user subject token; the token issuer still performs
+both exchange hops (ADR-0001). The realm and its clients are a JSON
+export, so a temporary cluster is reproducible:
+
+```bash
+deploy/openshift/keycloak/setup-keycloak.sh          # deploy + import realm
+deploy/openshift/keycloak/verify-keycloak.sh         # CVE flag + login checks
+deploy/openshift/keycloak/setup-keycloak.sh --reset  # re-import realm
+```
+
+The server is pinned by amd64 digest. Every available image bundles an
+OpenJDK affected by CVE-2026-114938, so the deployment sets
+`JAVA_OPTS_APPEND=-XX:-UseBASE64Intrinsics` and setup fails unless the
+running JVM reports `UseBASE64Intrinsics = false`. The canonical issuer
+is the in-cluster Service, `http://keycloak.zt-demo.svc:8080/realms/zt`;
+`setup.sh` keeps a loopback forward on `18082` for password-grant token
+acquisition, so the laptop never needs the Route.
 
 The namespaces are `openshell` (gateway), `zt-demo` (issuer and document
 services) and `zt2-sandboxes` (sandboxes). Sandboxes deliberately do not

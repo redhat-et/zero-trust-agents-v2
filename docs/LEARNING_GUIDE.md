@@ -19,7 +19,8 @@ label-based selector), and the issuer's prefix check in
 ## Delegation is a stored token, exchange is the mechanism
 
 "Alice's sandbox" means the gateway holds Alice's subject token (minted
-by `GET /demo-subject-token?user=alice`, carrying her `departments`
+by Keycloak's password grant on OpenShift, or by
+`GET /demo-subject-token?user=alice` on Podman, carrying her `groups`
 claim) and exchanges it via RFC 8693 when the sandbox needs access. The
 sandbox never sees Alice's token — see step 3.
 
@@ -42,13 +43,14 @@ its supervisor does.
 ## The intersection is enforced at mint time
 
 This is v2's headline difference from v1. At the final exchange
-(`token-issuer/server.go`, `handleSupervisorExchange`), the issuer looks
-up the user's departments **server-side** by the intermediate token's
-`sub` and computes `departments ∩ requested scope`. Empty → `403
-insufficient_department_permissions`, nothing minted. Non-empty → the
-token's scope *is* the intersection — never the requested list, so an
-over-broad request cannot smuggle scope. v1 enforced the same property
-with OPA at request time; here the token itself is born narrow.
+(`token-issuer/server.go`, `handleSupervisorExchange`), the issuer uses
+the verified `groups` claim (Keycloak) or looks the user up in
+`config/users.yaml` (Podman) and computes `groups ∩ requested scope`.
+Empty → `403 insufficient_department_permissions`, nothing minted.
+Non-empty → the token's scope *is* the intersection — never the
+requested list, so an over-broad request cannot smuggle scope. v1
+enforced the same property with OPA at request time; here the token
+itself is born narrow.
 
 Two teaching notes hidden in the implementation:
 
@@ -60,7 +62,8 @@ Two teaching notes hidden in the implementation:
   design would.
 - **`GET /demo-subject-token` is the simulated login, not a real one.**
   It mints any known user's subject token with no authentication — in a
-  real system this endpoint is your IdP. The blast radius is contained
+  real system this endpoint is your IdP. On OpenShift that role belongs
+  to Keycloak; Podman keeps the minter. The blast radius is contained
   (exchanging the token still requires a valid gateway SVID, and the
   final scope is intersected server-side with that user's real
   departments), but do not copy this endpoint into anything real.

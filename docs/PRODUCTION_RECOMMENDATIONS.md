@@ -54,11 +54,14 @@ gateway's JWT signing keys and SPIRE's CA should be persisted and
 rotated — on a throwaway cluster they are ephemeral, which is fine for
 a demo and wrong for production.
 
-## Human identity: any IdP
+## Human identity: Keycloak (OpenShift) or any IdP
 
-No IdP is deployed. The issuer's `/demo-subject-token` endpoint is a
-stand-in for yours: the subject token is an OAuth2 access token
-presented at the RFC 8693 exchange (`subject_token_type:
+On OpenShift, Keycloak is the identity provider: the subject token is a
+realm access token (RS256) that the issuer verifies against the realm
+JWKS, and `deploy/openshift/keycloak/` deploys a reproducible realm. On
+Podman, the issuer's `/demo-subject-token` endpoint is a stand-in for
+yours: the subject token is an OAuth2 access token presented at the RFC
+8693 exchange (`subject_token_type:
 urn:ietf:params:oauth:token-type:access_token`), so Keycloak, Entra
 ID, Okta, or anything else that issues such a token plugs in at that
 boundary. A real integration verifies subject tokens against the
@@ -112,7 +115,13 @@ JWKS before it will accept the new tokens. Plan both halves together.
 - The `demo_token_use` claim, a branch flag that exists only because one
   issuer plays both the gateway and supervisor roles. Use two endpoints or
   two client registrations.
-- The `/demo-subject-token` endpoint, a stand-in for the customer's IdP.
+- The `/demo-subject-token` endpoint, a stand-in for the customer's IdP
+  (Podman only; OpenShift uses Keycloak).
+- Keycloak running in `start-dev` with a demo password grant over
+  in-cluster HTTP. Production needs TLS, a real login flow, a managed
+  database, and a Keycloak image without CVE-2026-114938 — the demo
+  sets `-XX:-UseBASE64Intrinsics` and verifies it at setup, but that is
+  an interim mitigation, not a fix.
 - The user-to-department map in `internal/config/config.go`. Use IdP group
   claims or a policy engine.
 - Prefix matching on SPIFFE IDs. Use the exact gateway identity or an

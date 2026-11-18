@@ -61,6 +61,7 @@ setup). See the networking notes in `docs/ARCHITECTURE.md`.
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — components, token flow, claim schema
+- `docs/ADR-0001-keycloak-identity-provider.md` — why Keycloak is the IdP and the issuer keeps the exchange
 - `docs/DEMO_SCENARIOS.md` — the six scenarios and what each proves
 - `docs/LEARNING_GUIDE.md` — guided tour of the security ideas
 - `docs/PRODUCTION_RECOMMENDATIONS.md` — from demo to production on OpenShift
@@ -78,6 +79,7 @@ host — the quick starts above) and OpenShift/ROSA
 | `document-service/` | Go protected resource server, one instance per department |
 | `deploy/podman/` | SPIRE configs, gateway/services scripts, provider profiles |
 | `deploy/openshift/` | Helm values, manifests, and setup for ROSA/OpenShift |
+| `deploy/openshift/keycloak/` | Reproducible Keycloak deployment and realm export |
 | `scripts/` | setup, teardown, one script per scenario, and the driver harness |
 | `config/users.yaml` | demo users and groups |
 
