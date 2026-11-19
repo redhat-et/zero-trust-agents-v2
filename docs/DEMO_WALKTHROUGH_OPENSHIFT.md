@@ -60,7 +60,7 @@ deploy/openshift/keycloak/verify-keycloak.sh         # CVE flag + login checks
 deploy/openshift/keycloak/setup-keycloak.sh --reset  # re-import realm
 ```
 
-The server is pinned by amd64 digest. Every available image bundles an
+The server is pinned by the multi-arch index digest. Every available image bundles an
 OpenJDK affected by CVE-2026-114938, so the deployment sets
 `JAVA_OPTS_APPEND=-XX:-UseBASE64Intrinsics` and setup fails unless the
 running JVM reports `UseBASE64Intrinsics = false`. The canonical issuer

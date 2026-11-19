@@ -121,7 +121,6 @@ peer_url() { printf 'http://%s:%s/\n' "$1" "$2"; }
 # listeners succeed and curl's 127.0.0.1 hits the wrong stack. Distinct
 # ports, plus --address 127.0.0.1 in ensure_forward, keep the two runs
 # from crossing over.
-DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
 ISSUER_LOCAL_PORT="${ZT2_ISSUER_LOCAL_PORT:-19180}"
 ISSUER_LOCAL="http://127.0.0.1:$ISSUER_LOCAL_PORT"
 ENGINEERING_LOCAL_PORT="${ZT2_ENGINEERING_LOCAL_PORT:-19101}"
@@ -287,17 +286,3 @@ fetch_rogue_svid() {
 ensure_forward "$ISSUER_LOCAL_PORT" service/token-issuer
 ensure_forward "$ENGINEERING_LOCAL_PORT" service/document-engineering
 ensure_forward "$FINANCE_LOCAL_PORT" service/document-finance
-
-# The minter forward is owned by setup.sh, but it dies when the issuer
-# rolls (a new pod replaces the forward's target) — restart it if the
-# listener is gone.
-DEMO_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
-if ! curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1; then
-    kill_pidfile "$STATE_DIR/openshift-forward.pid"
-    oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
-    echo $! >"$STATE_DIR/openshift-forward.pid"
-    for _ in $(seq 1 15); do
-        curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break
-        sleep 2
-    done
-fi

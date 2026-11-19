@@ -208,15 +208,20 @@ echo "== 6/8 Keycloak token-acquisition forward =="
 # Laptop-side token acquisition: the realm issuer is the in-cluster
 # Service, so a loopback forward preserves the canonical `iss` while
 # keeping the UI-less password grant off a Route.
+KEYCLOAK_NAMESPACE="${ZT2_KEYCLOAK_NAMESPACE:-zt-demo}"
+KEYCLOAK_REALM="${ZT2_KEYCLOAK_REALM:-zt}"
 KEYCLOAK_PORT="${ZT2_KEYCLOAK_LOCAL_PORT:-18082}"
+# The Keycloak forward has its own pidfile: the scenario driver must not
+# mistake it for the retired subject-token minter.
+[[ -f "$STATE_DIR/keycloak-forward.pid" ]] && kill_pidfile "$STATE_DIR/keycloak-forward.pid"
 [[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
-nohup oc -n zt-demo port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PORT}:8080" >/dev/null 2>&1 &
+nohup oc -n "$KEYCLOAK_NAMESPACE" port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PORT}:8080" >/dev/null 2>&1 &
 FORWARD_PID=$!
-echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"
+echo "$FORWARD_PID" >"$STATE_DIR/keycloak-forward.pid"
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT
 ready=0
 for _ in $(seq 1 20); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:${KEYCLOAK_PORT}/realms/zt" >/dev/null 2>&1; then
+    if curl -fsS --max-time 2 "http://127.0.0.1:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}" >/dev/null 2>&1; then
         ready=1
         break
     fi
@@ -289,7 +294,7 @@ done
 
 echo "== 8/8 smoke test =="
 SUBJECT_TOKEN="$(curl -fsS -X POST \
-    "http://127.0.0.1:${KEYCLOAK_PORT}/realms/zt/protocol/openid-connect/token" \
+    "http://127.0.0.1:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
     -d grant_type=password -d client_id=login-alice \
     -d username=alice -d password=alice -d scope=openid |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
@@ -300,7 +305,7 @@ echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 state_set ZT2_DRIVER openshift
 state_set ZT2_GATEWAY_ROUTE "$ROUTE_HOST"
 state_set ZT2_KEYCLOAK_LOCAL_URL "http://127.0.0.1:${KEYCLOAK_PORT}"
-state_set ZT2_KEYCLOAK_REALM zt
+state_set ZT2_KEYCLOAK_REALM "$KEYCLOAK_REALM"
 state_set ZT2_STATE_DIR "$STATE_DIR"
 
 # The port-forward must outlive this script; disarm the EXIT trap.

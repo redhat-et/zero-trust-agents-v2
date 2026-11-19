@@ -75,7 +75,7 @@ The deployment sets `JAVA_OPTS_APPEND=-XX:-UseBASE64Intrinsics`, and
 `verify-keycloak.sh` fails setup unless the running JVM reports
 `UseBASE64Intrinsics = false`. The test cluster exposes `avx512vbmi`, so
 the condition is live. Revisit when a fixed image ships; the image is
-pinned by amd64 digest, not by a bare tag.
+pinned by the multi-arch index digest, not by a bare tag.
 
 ## Alternatives considered
 

@@ -46,15 +46,18 @@ oc -n openshell delete pod zt2-gw-svid --ignore-not-found >/dev/null 2>&1 || tru
 echo "ok: SVID fetched (${#svid} bytes)"
 
 echo "== client_credentials with the SVID =="
+work="$(mktemp -d)"
+ok="$work/ok.json"
+bad="$work/bad.json"
 oc -n "$NAMESPACE" port-forward --address 127.0.0.1 svc/keycloak "${LOCAL_PORT}:8080" >/dev/null 2>&1 &
 PF_PID=$!
-trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
+trap 'kill "$PF_PID" 2>/dev/null || true; rm -rf "$work"' EXIT
 for _ in $(seq 1 30); do
     curl -fsS --max-time 2 "http://127.0.0.1:${LOCAL_PORT}/realms/${REALM}/.well-known/openid-configuration" >/dev/null 2>&1 && break
     sleep 2
 done
 
-status="$(curl -sS -o /tmp/kc-spiffe-ok.json -w '%{http_code}' -X POST "$TOKEN_URL" \
+status="$(curl -sS -o "$ok" -w '%{http_code}' -X POST "$TOKEN_URL" \
     -d grant_type=client_credentials \
     -d client_id="$GATEWAY_SPIFFE_ID" \
     -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe \
@@ -62,9 +65,9 @@ status="$(curl -sS -o /tmp/kc-spiffe-ok.json -w '%{http_code}' -X POST "$TOKEN_U
 if [[ "$status" != "200" ]]; then
     oc -n "$NAMESPACE" logs deploy/keycloak --tail=40 2>/dev/null |
         grep -iE 'spiffe|jwks|bundle|invalid|error' | tail -10 >&2 || true
-    fail "client_credentials returned $status: $(cat /tmp/kc-spiffe-ok.json)"
+    fail "client_credentials returned $status: $(cat "$ok")"
 fi
-python3 -c 'import json,sys; d=json.load(open("/tmp/kc-spiffe-ok.json")); sys.exit(0 if d.get("access_token") else 1)' ||
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("access_token") else 1)' "$ok" ||
     fail "200 response carried no access_token"
 echo "ok: Keycloak issued a token for $GATEWAY_SPIFFE_ID"
 
@@ -82,16 +85,15 @@ body = json.dumps(claims, separators=(",", ":")).encode()
 print(f"{header}.{base64.urlsafe_b64encode(body).rstrip(b'=').decode()}.{signature}")
 PY
 )"
-status="$(curl -sS -o /tmp/kc-spiffe-bad.json -w '%{http_code}' -X POST "$TOKEN_URL" \
+status="$(curl -sS -o "$bad" -w '%{http_code}' -X POST "$TOKEN_URL" \
     -d grant_type=client_credentials \
     -d client_id="$GATEWAY_SPIFFE_ID" \
     -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe \
     -d client_assertion="$tampered")"
 [[ "$status" == "401" ]] ||
-    fail "tampered assertion returned $status, expected 401: $(cat /tmp/kc-spiffe-bad.json)"
-grep -q 'invalid_client' /tmp/kc-spiffe-bad.json ||
-    fail "tampered assertion did not return invalid_client: $(cat /tmp/kc-spiffe-bad.json)"
+    fail "tampered assertion returned $status, expected 401: $(cat "$bad")"
+grep -q 'invalid_client' "$bad" ||
+    fail "tampered assertion did not return invalid_client: $(cat "$bad")"
 echo "ok: tampered assertion rejected with 401 invalid_client"
 
-rm -f /tmp/kc-spiffe-ok.json /tmp/kc-spiffe-bad.json
 echo "verify-spiffe-auth: PASS"
