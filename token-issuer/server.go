@@ -121,32 +121,28 @@ func (s *server) verifySubject(token string) (tokens.Claims, error) {
 // configured IdP is a user token by construction and carries no demo
 // flag.
 func (s *server) isUserSubject(claims tokens.Claims) bool {
-	if claims.String("demo_token_use") == tokens.UseUserSubject {
-		return true
+	// A token from the configured IdP is judged only by the IdP rules,
+	// even if it somehow carries the demo branch flag.
+	if s.cfg.SubjectTokenIssuer != "" &&
+		claims.String("iss") == s.cfg.SubjectTokenIssuer {
+		return claims.String("typ") == "Bearer" &&
+			strings.HasPrefix(claims.String("azp"), "login-")
 	}
-	if s.cfg.SubjectTokenIssuer == "" ||
-		claims.String("iss") != s.cfg.SubjectTokenIssuer {
-		return false
-	}
-	// Only human user tokens start the gateway hop: Keycloak marks access
-	// tokens as Bearer, and the demo's login clients are named login-*.
-	// This rejects ID tokens and client_credentials service-account tokens.
-	return claims.String("typ") == "Bearer" &&
-		strings.HasPrefix(claims.String("azp"), "login-")
+	return claims.String("demo_token_use") == tokens.UseUserSubject
 }
 
 // groupsFor returns the departments a subject token grants. A verified
 // groups claim from the IdP is authoritative; the users file is the
 // Podman fallback.
 func (s *server) groupsFor(claims tokens.Claims) ([]string, bool) {
+	// An IdP-sourced intermediate carries its provenance explicitly: an
+	// empty group list is authoritative and must not fall back to the
+	// local users file.
+	if claims.String("groups_source") == "idp" {
+		return claims.StringSlice("groups"), true
+	}
 	if groups := claims.StringSlice("groups"); len(groups) > 0 {
 		return groups, true
-	}
-	// A token from the configured IdP must not borrow the local users
-	// file: the IdP is the authority on that user's groups.
-	if s.cfg.SubjectTokenIssuer != "" &&
-		claims.String("iss") == s.cfg.SubjectTokenIssuer {
-		return nil, false
 	}
 	user, ok := s.byUser[claims.String("sub")]
 	if !ok {
@@ -303,10 +299,20 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 		"iat":            now(),
 		"exp":            now() + intermediateTTL,
 	}
-	// Carry the verified IdP groups across the hop: the supervisor
-	// authorizes from this claim, never from local config.
-	if groups := userClaims.StringSlice("groups"); len(groups) > 0 {
+	// Carry the verified IdP groups across the hop and record their
+	// provenance: the supervisor authorizes from this claim, never from
+	// local config, and an empty list is a real revocation.
+	fromIDP := s.cfg.SubjectTokenIssuer != "" &&
+		userClaims.String("iss") == s.cfg.SubjectTokenIssuer
+	groups := userClaims.StringSlice("groups")
+	if fromIDP && groups == nil {
+		groups = []string{}
+	}
+	if fromIDP || len(groups) > 0 {
 		inter["groups"] = groups
+	}
+	if fromIDP {
+		inter["groups_source"] = "idp"
 	}
 	tok, err := s.signer.Sign(inter)
 	if err != nil {
