@@ -7,10 +7,10 @@ inside a sandbox. It complements `docs/DEMO_WALKTHROUGH.md` (the runtime
 model, which is identical) and `docs/DEMO_WALKTHROUGH_A2A.md` (the
 agent-to-agent layer).
 
-Status: verified on ROSA 4.22 (amd64), 2026-11-18. Scenarios 1–6 pass
-under `ZT2_DRIVER=openshift` with Keycloak as the identity provider; 11
-and 15 remain blocked by the upstream exposure limitation described
-below.
+Status: verified on ROSA 4.22 (amd64), 2026-11-18. Scenarios 1–6 and
+12–14 pass under `ZT2_DRIVER=openshift` with Keycloak as the identity
+provider; 11 and 15 remain blocked by the upstream exposure limitation
+described below, even with DocsClaw 0.21.0.
 
 ## The driver abstraction
 
