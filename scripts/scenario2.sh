@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Scenario 2: Alice's sandbox with hr capability fetches an engineering
-# doc. Expected: DENIED — alice's departments (engineering, finance) do
+# doc. Expected: DENIED — alice's groups (engineering, finance) do
 # not intersect the hr capability, so no token carries the engineering
 # scope. The intersection is enforced at token-mint time.
 set -euo pipefail
@@ -8,8 +8,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 scenario_header "Scenario 2: Alice (engineering+finance) x hr capability -> engineering doc"
 
-SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
-    python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+SUBJECT_TOKEN="$(mint_subject_token alice)"
 "${OS[@]}" provider create --name alice-hr-prov-s2-$$ --type zt2-alice-hr-v2 \
     --credential "subject_token=${SUBJECT_TOKEN}" >/dev/null
 

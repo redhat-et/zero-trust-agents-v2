@@ -18,6 +18,7 @@ ALL=0
 AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.9}"
 
 echo "== port-forwards =="
+[[ -f "$STATE_DIR/keycloak-forward.pid" ]] && kill_pidfile "$STATE_DIR/keycloak-forward.pid"
 [[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
 # Forwards started by the scenario-harness driver (lib-openshift.sh).
 for pidfile in "$STATE_DIR"/forward-*.pid; do

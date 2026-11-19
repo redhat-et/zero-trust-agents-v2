@@ -30,6 +30,32 @@ sandbox_spiffe_id() {
     echo "spiffe://openshell.local/openshell/sandbox/$1"
 }
 
+# mint_subject_token USER — obtain a user subject token from the
+# driver's identity provider: Keycloak on OpenShift, the demo minter on
+# Podman. Keycloak's login client per user is what puts that user's
+# department scopes into the token.
+mint_subject_token() {
+    local user="$1"
+    if [[ "$ZT2_DRIVER" == "openshift" ]]; then
+        [[ -n "${ZT2_KEYCLOAK_LOCAL_URL:-}" ]] ||
+            {
+                printf "ZT2_KEYCLOAK_LOCAL_URL not set (run deploy/openshift/setup.sh)\n" >&2
+                return 1
+            }
+        curl -fsS -X POST \
+            "${ZT2_KEYCLOAK_LOCAL_URL}/realms/${ZT2_KEYCLOAK_REALM:-zt}/protocol/openid-connect/token" \
+            -d grant_type=password \
+            -d "client_id=login-${user}" \
+            -d "username=${user}" \
+            -d "password=${user}" \
+            -d scope=openid |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+    else
+        curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=${user}" |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+    fi
+}
+
 sandbox_id() {
     # Capture before parsing: awk's early exit closes the pipe and the
     # openshell CLI panics on the broken stdout, which pipefail turns
@@ -236,8 +262,7 @@ agent_log() {
 agent_provider() {
     local name="$1" profile_id="$2" user="$3"
     local subject
-    subject="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=$user" |
-        python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+    subject="$(mint_subject_token "$user")"
     "${OS[@]}" provider delete "$name" >/dev/null 2>&1 || true
     "${OS[@]}" provider create --name "$name" --type "$profile_id" \
         --credential "subject_token=$subject" >/dev/null
@@ -366,8 +391,7 @@ mint_final_token() {
     local spiffe_id subject gateway supervisor intermediate
     spiffe_id="$(sandbox_spiffe_id "$sandbox_id")"
 
-    subject="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=$user" |
-        python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+    subject="$(mint_subject_token "$user")"
     gateway="$(fetch_gateway_svid)"
     supervisor="$(fetch_supervisor_svid "$sandbox_id")"
     if [[ -z "$gateway" || -z "$supervisor" ]]; then

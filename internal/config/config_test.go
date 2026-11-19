@@ -10,7 +10,7 @@ const testYAML = `
 users:
   - id: alice
     name: Alice
-    departments: [engineering, finance]
+    groups: [engineering, finance]
 `
 
 const testAgentsYAML = `
@@ -53,7 +53,7 @@ func loadTest(t *testing.T) *Config {
 	return cfg
 }
 
-// TestLoadReturnsUsers parses the users file and their departments.
+// TestLoadReturnsUsers parses the users file and their groups.
 func TestLoadReturnsUsers(t *testing.T) {
 	cfg := loadTest(t)
 	if len(cfg.Users) != 1 {
@@ -63,8 +63,8 @@ func TestLoadReturnsUsers(t *testing.T) {
 	if u.ID != "alice" || u.Name != "Alice" {
 		t.Fatalf("unexpected user: %+v", u)
 	}
-	if len(u.Departments) != 2 || u.Departments[0] != "engineering" || u.Departments[1] != "finance" {
-		t.Fatalf("unexpected departments: %v", u.Departments)
+	if len(u.Groups) != 2 || u.Groups[0] != "engineering" || u.Groups[1] != "finance" {
+		t.Fatalf("unexpected groups: %v", u.Groups)
 	}
 }
 

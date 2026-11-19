@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ type server struct {
 	cfg         *config.Config
 	signer      *tokens.Signer
 	jwks        JWKSVerifier
+	subject     *tokens.JWKSVerifier
 	mux         *http.ServeMux
 	byUser      map[string]config.User
 	agentScopes map[string][]string
@@ -47,6 +49,9 @@ func newServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer) *se
 	}
 	for _, u := range cfg.Users {
 		s.byUser[u.ID] = u
+	}
+	if cfg.SubjectTokenJWKSURL != "" {
+		s.subject = tokens.NewJWKSVerifier(cfg.SubjectTokenJWKSURL)
 	}
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /.well-known/jwks.json", s.handleJWKS)
@@ -89,6 +94,62 @@ func NewDemoServer(cfg *config.Config, jwks JWKSVerifier, signer *tokens.Signer)
 
 // Handler exposes the routing for tests.
 func (s *server) Handler() http.Handler { return s.mux }
+
+// verifySubject accepts either a Keycloak user token (the OpenShift
+// identity provider) or the demo minter's own token (Podman). The
+// issuer claim only routes to a verifier: the chosen verifier checks the
+// signature and the issuer is re-checked after verification.
+func (s *server) verifySubject(token string) (tokens.Claims, error) {
+	if s.subject != nil && s.cfg.SubjectTokenIssuer != "" {
+		if peek, err := tokens.Parse(token); err == nil &&
+			peek.String("iss") == s.cfg.SubjectTokenIssuer {
+			claims, err := s.subject.Verify(token)
+			if err != nil {
+				return nil, err
+			}
+			if claims.String("iss") != s.cfg.SubjectTokenIssuer {
+				return nil, errors.New("subject token issuer mismatch")
+			}
+			return claims, nil
+		}
+	}
+	return s.signer.Verify(token)
+}
+
+// isUserSubject reports whether a verified token may start the gateway
+// hop. The demo minter marks its tokens explicitly; a token from the
+// configured IdP is a user token by construction and carries no demo
+// flag.
+func (s *server) isUserSubject(claims tokens.Claims) bool {
+	// A token from the configured IdP is judged only by the IdP rules,
+	// even if it somehow carries the demo branch flag.
+	if s.cfg.SubjectTokenIssuer != "" &&
+		claims.String("iss") == s.cfg.SubjectTokenIssuer {
+		return claims.String("typ") == "Bearer" &&
+			strings.HasPrefix(claims.String("azp"), "login-")
+	}
+	return claims.String("demo_token_use") == tokens.UseUserSubject
+}
+
+// groupsFor returns the departments a subject token grants. A verified
+// groups claim from the IdP is authoritative; the users file is the
+// Podman fallback.
+func (s *server) groupsFor(claims tokens.Claims) ([]string, bool) {
+	// An IdP-sourced intermediate carries its provenance explicitly: an
+	// empty group list is authoritative and must not fall back to the
+	// local users file.
+	if claims.String("groups_source") == "idp" {
+		return claims.StringSlice("groups"), true
+	}
+	if groups := claims.StringSlice("groups"); len(groups) > 0 {
+		return groups, true
+	}
+	user, ok := s.byUser[claims.String("sub")]
+	if !ok {
+		return nil, false
+	}
+	return user.Groups, true
+}
 
 // DemoHandler exposes the loopback-only demo routing for tests.
 func (s *server) DemoHandler() http.Handler { return s.demoMux }
@@ -133,7 +194,7 @@ func (s *server) handleSubjectToken(w http.ResponseWriter, r *http.Request) {
 		"sub":            user.ID,
 		"aud":            []string{"openshell-gateway", "account"},
 		"scope":          "openid profile email",
-		"departments":    user.Departments,
+		"groups":         user.Groups,
 		"demo_token_use": tokens.UseUserSubject,
 		"iat":            now(),
 		"exp":            now() + 1800,
@@ -189,7 +250,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, err := s.signer.Verify(subjectToken)
+	claims, err := s.verifySubject(subjectToken)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_subject_token"})
 		return
@@ -202,7 +263,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 	supervisorSVID, supErr := s.jwks.VerifySVID(assertion, s.cfg.SupervisorPrefix)
 	switch {
 	case gwErr == nil:
-		if claims.String("demo_token_use") != tokens.UseUserSubject {
+		if !s.isUserSubject(claims) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unsupported_token_use"})
 			return
 		}
@@ -227,7 +288,7 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported_intermediate_audience", "audience": audience})
 		return
 	}
-	tok, err := s.signer.Sign(tokens.Claims{
+	inter := tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
 		"sub":            userClaims.String("sub"),
 		"aud":            []string{audience},
@@ -237,7 +298,23 @@ func (s *server) gatewayExchange(w http.ResponseWriter, r *http.Request, userCla
 		"demo_token_use": tokens.UseIntermediate,
 		"iat":            now(),
 		"exp":            now() + intermediateTTL,
-	})
+	}
+	// Carry the verified IdP groups across the hop and record their
+	// provenance: the supervisor authorizes from this claim, never from
+	// local config, and an empty list is a real revocation.
+	fromIDP := s.cfg.SubjectTokenIssuer != "" &&
+		userClaims.String("iss") == s.cfg.SubjectTokenIssuer
+	groups := userClaims.StringSlice("groups")
+	if fromIDP && groups == nil {
+		groups = []string{}
+	}
+	if fromIDP || len(groups) > 0 {
+		inter["groups"] = groups
+	}
+	if fromIDP {
+		inter["groups_source"] = "idp"
+	}
+	tok, err := s.signer.Sign(inter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
 		return
@@ -311,14 +388,14 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	user, ok := s.byUser[claims.String("sub")]
+	groups, ok := s.groupsFor(claims)
 	if !ok {
-		// Unknown users have no departments: empty intersection.
+		// No IdP groups and no local user: empty intersection.
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "insufficient_department_permissions"})
 		return
 	}
 	requested := strings.Fields(r.Form.Get("scope"))
-	intersection := intersect(user.Departments, requested)
+	intersection := intersect(groups, requested)
 	// The rule decides what the intersection must contain. The minted
 	// scope is never narrowed beyond the intersection itself.
 	if !rule.allows(intersection) {
@@ -330,7 +407,7 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 
 	tok, err := s.signer.Sign(tokens.Claims{
 		"iss":            s.cfg.TokenIssuer,
-		"sub":            user.ID,
+		"sub":            claims.String("sub"),
 		"aud":            []string{audience, "account"},
 		"scope":          strings.Join(intersection, " "),
 		"azp":            supervisorSVID.String("sub"),
@@ -351,9 +428,9 @@ func (s *server) handleSupervisorExchange(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func intersect(departments, requested []string) []string {
-	set := make(map[string]bool, len(departments))
-	for _, d := range departments {
+func intersect(groups, requested []string) []string {
+	set := make(map[string]bool, len(groups))
+	for _, d := range groups {
 		set[d] = true
 	}
 	var out []string

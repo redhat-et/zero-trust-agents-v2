@@ -5,9 +5,11 @@
 package tokens
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -87,6 +89,7 @@ type header struct {
 
 const (
 	algES256 = "ES256"
+	algRS256 = "RS256"
 	keySize  = 32 // P-256 coordinate and signature half width
 )
 
@@ -98,6 +101,8 @@ type jwk struct {
 	Kid string `json:"kid"`
 	X   string `json:"x"`
 	Y   string `json:"y"`
+	N   string `json:"n"`
+	E   string `json:"e"`
 	Alg string `json:"alg,omitempty"`
 	Use string `json:"use,omitempty"`
 }
@@ -181,11 +186,14 @@ func (s *Signer) Sign(claims Claims) (string, error) {
 // Verify checks a token against the signer's own public key. The issuer
 // uses this for its subject tokens so it never calls its own JWKS.
 func (s *Signer) Verify(token string) (Claims, error) {
-	_, claims, sig, input, err := parseChecked(token)
+	h, claims, sig, input, err := parseChecked(token)
 	if err != nil {
 		return nil, err
 	}
-	return finishVerify(&s.key.PublicKey, claims, sig, input)
+	if h.Alg != algES256 {
+		return nil, fmt.Errorf("signer tokens must be %s, got %q", algES256, h.Alg)
+	}
+	return finishVerify(&s.key.PublicKey, algES256, claims, sig, input)
 }
 
 // PublicJWKS returns the published key set: public members only.
@@ -211,7 +219,7 @@ type JWKSVerifier struct {
 	client *http.Client
 
 	mu          sync.Mutex
-	keys        map[string]*ecdsa.PublicKey
+	keys        map[string]crypto.PublicKey
 	fetched     time.Time
 	fetching    bool
 	lastFailure time.Time
@@ -222,7 +230,7 @@ func NewJWKSVerifier(url string) *JWKSVerifier {
 	return &JWKSVerifier{
 		url:    url,
 		client: &http.Client{Timeout: 10 * time.Second},
-		keys:   make(map[string]*ecdsa.PublicKey),
+		keys:   make(map[string]crypto.PublicKey),
 	}
 }
 
@@ -236,14 +244,14 @@ func (v *JWKSVerifier) Verify(token string) (Claims, error) {
 	if err != nil {
 		return nil, err
 	}
-	return finishVerify(pub, claims, sig, input)
+	return finishVerify(pub, h.Alg, claims, sig, input)
 }
 
 // key returns the public key for kid. At most one fetch is in flight,
 // it happens outside the lock, and a cached key keeps verifying while
 // it runs or while the endpoint is down. A failed fetch is retried no
 // more often than jwksRetryInterval.
-func (v *JWKSVerifier) key(kid string) (*ecdsa.PublicKey, error) {
+func (v *JWKSVerifier) key(kid string) (crypto.PublicKey, error) {
 	v.mu.Lock()
 	pub := v.keys[kid]
 	if pub != nil && time.Since(v.fetched) < jwksCacheTTL {
@@ -305,9 +313,9 @@ func (v *JWKSVerifier) refresh() error {
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
 		return fmt.Errorf("parse JWKS: %w", err)
 	}
-	keys := make(map[string]*ecdsa.PublicKey, len(doc.Keys))
+	keys := make(map[string]crypto.PublicKey, len(doc.Keys))
 	for _, k := range doc.Keys {
-		if k.Kty != "EC" || k.Crv != "P-256" || k.Kid == "" {
+		if k.Kid == "" || (k.Use != "" && k.Use != "sig") {
 			continue
 		}
 		pub, err := publicKey(k)
@@ -330,7 +338,7 @@ func parseChecked(token string) (header, Claims, []byte, string, error) {
 	if err != nil {
 		return header{}, nil, nil, "", err
 	}
-	if h.Alg != algES256 {
+	if h.Alg != algES256 && h.Alg != algRS256 {
 		return header{}, nil, nil, "", fmt.Errorf("unsupported alg %q", h.Alg)
 	}
 	if h.Kid == "" {
@@ -342,9 +350,26 @@ func parseChecked(token string) (header, Claims, []byte, string, error) {
 // finishVerify checks the signature and expiry of an already parsed
 // token. exp is mandatory: a demo whose thesis is short-lived tokens
 // must not accept one that never expires.
-func finishVerify(pub *ecdsa.PublicKey, claims Claims, sig []byte, input string) (Claims, error) {
-	if err := verifyES256(pub, input, sig); err != nil {
-		return nil, err
+func finishVerify(pub crypto.PublicKey, alg string, claims Claims, sig []byte, input string) (Claims, error) {
+	switch alg {
+	case algES256:
+		ec, ok := pub.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("key type does not match alg %q", alg)
+		}
+		if err := verifyES256(ec, input, sig); err != nil {
+			return nil, err
+		}
+	case algRS256:
+		rsaPub, ok := pub.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("key type does not match alg %q", alg)
+		}
+		if err := verifyRS256(rsaPub, input, sig); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported alg %q", alg)
 	}
 	exp := claims.Int64("exp")
 	if exp == 0 {
@@ -366,6 +391,14 @@ func verifyES256(pub *ecdsa.PublicKey, input string, sig []byte) error {
 	s := new(big.Int).SetBytes(sig[keySize:])
 	digest := sha256.Sum256([]byte(input))
 	if !ecdsa.Verify(pub, digest[:], r, s) {
+		return errors.New("signature validation failed")
+	}
+	return nil
+}
+
+func verifyRS256(pub *rsa.PublicKey, input string, sig []byte) error {
+	digest := sha256.Sum256([]byte(input))
+	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, digest[:], sig); err != nil {
 		return errors.New("signature validation failed")
 	}
 	return nil
@@ -423,7 +456,41 @@ func thumbprint(x, y string) (string, error) {
 	return b64.EncodeToString(sum[:]), nil
 }
 
-func publicKey(k jwk) (*ecdsa.PublicKey, error) {
+func publicKey(k jwk) (crypto.PublicKey, error) {
+	switch k.Kty {
+	case "EC":
+		return ecPublicKey(k)
+	case "RSA":
+		return rsaPublicKey(k)
+	default:
+		return nil, fmt.Errorf("unsupported key type %q", k.Kty)
+	}
+}
+
+func rsaPublicKey(k jwk) (*rsa.PublicKey, error) {
+	nb, err := b64.DecodeString(k.N)
+	if err != nil {
+		return nil, fmt.Errorf("decode n: %w", err)
+	}
+	eb, err := b64.DecodeString(k.E)
+	if err != nil {
+		return nil, fmt.Errorf("decode e: %w", err)
+	}
+	n := new(big.Int).SetBytes(nb)
+	if n.Sign() <= 0 {
+		return nil, errors.New("RSA modulus must be positive")
+	}
+	e := new(big.Int).SetBytes(eb)
+	if !e.IsInt64() || e.Int64() < 2 || e.Int64() > 1<<31-1 {
+		return nil, errors.New("RSA exponent out of range")
+	}
+	return &rsa.PublicKey{N: n, E: int(e.Int64())}, nil
+}
+
+func ecPublicKey(k jwk) (*ecdsa.PublicKey, error) {
+	if k.Crv != "P-256" {
+		return nil, fmt.Errorf("unsupported curve %q", k.Crv)
+	}
 	xb, err := b64.DecodeString(k.X)
 	if err != nil {
 		return nil, fmt.Errorf("decode x: %w", err)

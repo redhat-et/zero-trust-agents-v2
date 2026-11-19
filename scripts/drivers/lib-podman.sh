@@ -21,7 +21,7 @@ source "$ROOT/deploy/podman/spire/common.sh"
 
 # Agent (DocsClaw) sandboxes run the derived image; the model endpoint is
 # a host-published MaaS host reached through its own provider profile.
-AGENT_IMAGE="${DOCSCLAW_IMAGE:-localhost/docsclaw:dev-openshell}"
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.21.0-openshell}"
 # Where agent configs and the serve log live inside a sandbox. Container
 # sandboxes keep the image's writable /workspace.
 WORKSPACE_DIR="/workspace"

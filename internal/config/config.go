@@ -1,4 +1,4 @@
-// Package config loads demo configuration: users with departments, and
+// Package config loads demo configuration: users with groups, and
 // the SPIFFE/token-issuer wiring. Values are tuned for the Stage 1
 // Podman deployment; every field can be overridden by environment
 // variable inside Load.
@@ -13,9 +13,9 @@ import (
 )
 
 type User struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Departments []string `yaml:"departments"`
+	ID     string   `yaml:"id"`
+	Name   string   `yaml:"name"`
+	Groups []string `yaml:"groups"`
 }
 
 // Agent is an A2A audience: the scope it requires is the minimum the
@@ -41,16 +41,18 @@ var DepartmentAudiences = map[string]bool{
 }
 
 type Config struct {
-	Users            []User
-	Agents           []Agent
-	GatewayPrefix    string
-	SupervisorPrefix string
-	SPIREIssuer      string
-	JWKSURI          string
-	SVIDAudience     string
-	TokenIssuer      string
-	ListenAddr       string
-	SigningKeyFile   string
+	Users               []User
+	Agents              []Agent
+	GatewayPrefix       string
+	SupervisorPrefix    string
+	SPIREIssuer         string
+	JWKSURI             string
+	SVIDAudience        string
+	TokenIssuer         string
+	ListenAddr          string
+	SigningKeyFile      string
+	SubjectTokenIssuer  string
+	SubjectTokenJWKSURL string
 }
 
 // envOr returns the environment value for key, or def when it is unset
@@ -81,22 +83,24 @@ func Load(path string) (*Config, error) {
 	}
 	spireIssuer := envOr("SPIRE_ISSUER", "http://spire-oidc:8080")
 	return &Config{
-		Users:            uf.Users,
-		Agents:           agents,
-		GatewayPrefix:    envOr("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/gateway/"),
-		SupervisorPrefix: envOr("SUPERVISOR_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/sandbox/"),
-		SPIREIssuer:      spireIssuer,
-		JWKSURI:          envOr("SPIRE_JWKS_URI", spireIssuer+"/keys"),
-		SVIDAudience:     envOr("JWT_SVID_AUDIENCE", "http://token-issuer.zt-demo.svc"),
-		TokenIssuer:      envOr("ACCESS_TOKEN_ISSUER", "http://token-issuer.zt-demo.svc"),
-		ListenAddr:       envOr("PORT", ":8080"),
-		SigningKeyFile:   envOr("ACCESS_TOKEN_SIGNING_KEY_FILE", "/etc/zt2/access-token-signing-key.pem"),
+		Users:               uf.Users,
+		Agents:              agents,
+		GatewayPrefix:       envOr("GATEWAY_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/gateway/"),
+		SupervisorPrefix:    envOr("SUPERVISOR_TRUST_DOMAIN_PREFIX", "spiffe://openshell.local/openshell/sandbox/"),
+		SPIREIssuer:         spireIssuer,
+		JWKSURI:             envOr("SPIRE_JWKS_URI", spireIssuer+"/keys"),
+		SVIDAudience:        envOr("JWT_SVID_AUDIENCE", "http://token-issuer.zt-demo.svc"),
+		TokenIssuer:         envOr("ACCESS_TOKEN_ISSUER", "http://token-issuer.zt-demo.svc"),
+		ListenAddr:          envOr("PORT", ":8080"),
+		SigningKeyFile:      envOr("ACCESS_TOKEN_SIGNING_KEY_FILE", "/etc/zt2/access-token-signing-key.pem"),
+		SubjectTokenIssuer:  envOr("SUBJECT_TOKEN_ISSUER", ""),
+		SubjectTokenJWKSURL: envOr("SUBJECT_TOKEN_JWKS_URL", ""),
 	}, nil
 }
 
 // loadAgents reads agent audiences from path and rejects the configs
 // that would otherwise misroute silently: empty or duplicate audiences,
-// names that collide with departments, and agents with no scopes.
+// names that collide with groups, and agents with no scopes.
 func loadAgents(path string) ([]Agent, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

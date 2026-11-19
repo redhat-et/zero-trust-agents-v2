@@ -33,8 +33,7 @@ fi
 
 # Attempt the intermediate exchange directly at the issuer, with a valid
 # subject token so the only thing that can deny is the rogue SVID.
-SUBJECT_TOKEN="$(curl -fsS "$DEMO_SUBJECT_URL/demo-subject-token?user=alice" |
-    python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+SUBJECT_TOKEN="$(mint_subject_token alice)"
 STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$ISSUER_LOCAL/token" \
     -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
     -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe" \

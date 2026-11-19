@@ -28,7 +28,7 @@ SPIRE_CRDS_VERSION="${SPIRE_CRDS_VERSION:-0.5.0}"
 OPENSHELL_CHART_VERSION="${OPENSHELL_CHART_VERSION:-0.1.8}"
 AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.9}"
 
-echo "== 0/7 prechecks =="
+echo "== 0/8 prechecks =="
 # Landlock requires OpenShift 4.19+ (OpenShell runtime requirement).
 MINOR="$(oc get clusterversion -o jsonpath='{.items[0].status.history[0].version}' | cut -d. -f2)"
 if [[ "${MINOR:-0}" -lt 19 ]]; then
@@ -74,7 +74,7 @@ ensure_pull_secret() {
     oc -n "$ns" secrets link default zt2-quay --for=pull >/dev/null 2>&1 || true
 }
 
-echo "== 1/7 SPIRE (hardened charts) =="
+echo "== 1/8 SPIRE (hardened charts) =="
 helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/ >/dev/null 2>&1 || true
 helm repo update spiffe >/dev/null
 # Pre-create the SPIRE namespaces with the OpenShift labels the chart's
@@ -98,11 +98,11 @@ oc wait --for=condition=Established crd/clusterspiffeids.spire.spiffe.io --timeo
 helm upgrade --install spire spiffe/spire --version "$SPIRE_CHART_VERSION" \
     -n spire -f "$ROOT/deploy/openshift/spire/values.yaml" --wait
 
-echo "== 2/7 Agent Sandbox controller =="
+echo "== 2/8 Agent Sandbox controller =="
 oc apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox.yaml"
 oc -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=300s
 
-echo "== 3/7 OpenShell gateway =="
+echo "== 3/8 OpenShell gateway =="
 oc create namespace openshell >/dev/null 2>&1 || true
 oc create namespace zt2-sandboxes >/dev/null 2>&1 || true
 oc apply -f "$ROOT/deploy/openshift/zt-demo/namespace.yaml"
@@ -159,7 +159,7 @@ wait_route() {
 }
 wait_route
 
-echo "== 4/7 zt-demo services =="
+echo "== 4/8 zt-demo services =="
 oc apply -f "$ROOT/deploy/openshift/zt-demo/namespace.yaml"
 gen_signing_key() {
     local key
@@ -201,21 +201,38 @@ for dept in engineering finance admin hr public; do
     wait_rollout zt-demo "deployment/document-$dept"
 done
 
-echo "== 5/7 subject-token minter port-forward =="
-# The unauthenticated /demo-subject-token listener is reached ONLY via
-# port-forward to the pod -- never a Route or Service.
-DEMO_PORT="${ZT2_DEMO_LOCAL_PORT:-18090}"
+echo "== 5/8 Keycloak (identity plane) =="
+"$ROOT/deploy/openshift/keycloak/setup-keycloak.sh" --with-spiffe
+
+echo "== 6/8 Keycloak token-acquisition forward =="
+# Laptop-side token acquisition: the realm issuer is the in-cluster
+# Service, so a loopback forward preserves the canonical `iss` while
+# keeping the UI-less password grant off a Route.
+KEYCLOAK_NAMESPACE="${ZT2_KEYCLOAK_NAMESPACE:-zt-demo}"
+KEYCLOAK_REALM="${ZT2_KEYCLOAK_REALM:-zt}"
+KEYCLOAK_PORT="${ZT2_KEYCLOAK_LOCAL_PORT:-18082}"
+# The Keycloak forward has its own pidfile: the scenario driver must not
+# mistake it for the retired subject-token minter.
+[[ -f "$STATE_DIR/keycloak-forward.pid" ]] && kill_pidfile "$STATE_DIR/keycloak-forward.pid"
 [[ -f "$STATE_DIR/openshift-forward.pid" ]] && kill_pidfile "$STATE_DIR/openshift-forward.pid"
-oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
+nohup oc -n "$KEYCLOAK_NAMESPACE" port-forward --address 127.0.0.1 svc/keycloak "${KEYCLOAK_PORT}:8080" >/dev/null 2>&1 &
 FORWARD_PID=$!
-echo "$FORWARD_PID" >"$STATE_DIR/openshift-forward.pid"
+echo "$FORWARD_PID" >"$STATE_DIR/keycloak-forward.pid"
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT
+ready=0
 for _ in $(seq 1 20); do
-    curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break
+    if curl -fsS --max-time 2 "http://127.0.0.1:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}" >/dev/null 2>&1; then
+        ready=1
+        break
+    fi
     sleep 2
 done
+if [[ "$ready" != "1" ]]; then
+    printf "Keycloak did not become ready at http://127.0.0.1:%s\n" "$KEYCLOAK_PORT" >&2
+    exit 1
+fi
 
-echo "== 6/7 provider profiles =="
+echo "== 7/8 provider profiles =="
 OS=(openshell --gateway zt2 --gateway-endpoint "https://$ROUTE_HOST")
 if ! "${OS[@]}" status >/dev/null 2>&1; then
     # Registering a remote https gateway: --local selects the mTLS
@@ -275,8 +292,11 @@ for profile in "${PROFILES[@]}"; do
     "${OS[@]}" profile import -f "$profile_out_dir/$profile.yaml" | tail -1
 done
 
-echo "== 7/7 smoke test =="
-SUBJECT_TOKEN="$(curl -fsS "http://127.0.0.1:${DEMO_PORT}/demo-subject-token?user=alice" |
+echo "== 8/8 smoke test =="
+SUBJECT_TOKEN="$(curl -fsS -X POST \
+    "http://127.0.0.1:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=login-alice \
+    -d username=alice -d password=alice -d scope=openid |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 "${OS[@]}" provider create --name alice-eng --type zt2-alice-engineering-v2 \
@@ -284,7 +304,8 @@ echo "subject token minted for alice: ${SUBJECT_TOKEN:0:30}..."
 
 state_set ZT2_DRIVER openshift
 state_set ZT2_GATEWAY_ROUTE "$ROUTE_HOST"
-state_set TOKEN_ISSUER_DEMO_HOST_PORT "$DEMO_PORT"
+state_set ZT2_KEYCLOAK_LOCAL_URL "http://127.0.0.1:${KEYCLOAK_PORT}"
+state_set ZT2_KEYCLOAK_REALM "$KEYCLOAK_REALM"
 state_set ZT2_STATE_DIR "$STATE_DIR"
 
 # The port-forward must outlive this script; disarm the EXIT trap.
@@ -296,7 +317,7 @@ OpenShift demo environment ready.
   gateway:        https://$ROUTE_HOST (name zt2, registered)
   token issuer:   http://token-issuer.zt-demo.svc:8080 (in-cluster)
   doc services:   document-{engineering,finance,admin,hr,public}.zt-demo.svc:8080
-  minter forward: http://127.0.0.1:${DEMO_PORT} (pid $FORWARD_PID)
+  keycloak local: http://127.0.0.1:${KEYCLOAK_PORT} (pid $FORWARD_PID)
   state:          $STATE_DIR/openshift.env
 
 Run scenarios: for s in {1..6}; do ZT2_DRIVER=openshift scripts/scenario\$s.sh; done

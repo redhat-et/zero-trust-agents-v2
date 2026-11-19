@@ -56,9 +56,11 @@ token-mint time**.
 
 ## Token claim schema
 
-All demo tokens are ES256, signed by the issuer with a key only it
-holds. Every verifier fetches the issuer's `/.well-known/jwks.json` and
-holds no signing material. Tokens carry a `demo_token_use`
+Tokens minted by the issuer are ES256, signed with a key only it holds.
+Every verifier fetches the issuer's `/.well-known/jwks.json` and holds no
+signing material. On OpenShift the **subject** token is an RS256 Keycloak
+access token: the issuer verifies it against the realm JWKS and mints the
+later hops itself. Issuer-minted tokens carry a `demo_token_use`
 discriminator:
 
 | Token | demo_token_use | azp / client_id | aud | TTL |
@@ -67,11 +69,11 @@ discriminator:
 | Intermediate | `intermediate` | gateway SPIFFE ID | supervisor SPIFFE ID | 300s |
 | Final | `final` | supervisor SPIFFE ID | audience, account | 300s |
 
-The subject token additionally carries `departments` (from
-`config/users.yaml`); the final token's `scope` is the intersection
-result — never the requested list. The final token's audience is a
-department or, for agent-to-agent calls, an agent audience from
-`config/agents.yaml`.
+The subject token additionally carries `groups` — from Keycloak on
+OpenShift, from `config/users.yaml` on Podman; the final token's `scope`
+is the intersection result — never the requested list. The final token's
+audience is a department or, for agent-to-agent calls, an agent audience
+from `config/agents.yaml`.
 
 ## Capability model
 
@@ -215,12 +217,14 @@ The token issuer verifies SPIRE's JWKS over TLS against the SPIFFE
 trust bundle (a `spiffe-helper` sidecar writes it from the
 CSI-mounted Workload API socket). The unauthenticated
 `/demo-subject-token` listener is reachable only via
-`oc port-forward` — never a Route or Service.
+`oc port-forward` — never a Route or Service — and the OpenShift driver
+does not use it: Keycloak issues the subject token there.
 
 Human identity is a deliberate non-component: the subject token is an
 OAuth2 access token presented at the RFC 8693 exchange, so any
-customer IdP plugs in at that boundary — see
-[production recommendations](PRODUCTION_RECOMMENDATIONS.md).
+customer IdP plugs in at that boundary. On OpenShift Keycloak is that
+IdP; see [production recommendations](PRODUCTION_RECOMMENDATIONS.md) and
+[ADR-0001](ADR-0001-keycloak-identity-provider.md).
 
 ## Attribution
 

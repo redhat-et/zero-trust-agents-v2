@@ -28,12 +28,11 @@ HR_URL="http://document-hr.zt-demo.svc.cluster.local:8080"
 # log must target /sandbox (verified 2026-11-10: /sandbox is writable,
 # /workspace returns EACCES).
 WORKSPACE_DIR="/sandbox"
-# A real linux/amd64 build is required: the historical ghcr -openshell-amd64
-# tag was a mislabeled arm64 image (Exec format error on amd64 nodes) and
-# has since been removed from ghcr. Built from ~/work/docsclaw with
-# GOARCH=amd64 against a multi-arch UBI base; the quay repo is public.
-# A reproducible, project-owned build is tracked in #18.
-AGENT_IMAGE="${DOCSCLAW_IMAGE:-quay.io/panni/docsclaw:v2-openshell-amd64-r3}"
+# Agent image: the published DocsClaw 0.21.0 OpenShell variant. That tag
+# is a multi-arch index (amd64 + arm64); the default DocsClaw image is
+# not suitable here because it lacks tar (needed by `sandbox upload`)
+# and the /sandbox workspace. DOCSCLAW_IMAGE overrides for local builds.
+AGENT_IMAGE="${DOCSCLAW_IMAGE:-ghcr.io/redhat-et/docsclaw:0.21.0-openshell}"
 # The issuer as a sandbox pod reaches it: full FQDN, because the sandbox
 # resolver has no search domains.
 ISSUER_EGRESS_HOST="${ZT2_ISSUER_EGRESS_HOST:-token-issuer.zt-demo.svc.cluster.local}"
@@ -122,7 +121,6 @@ peer_url() { printf 'http://%s:%s/\n' "$1" "$2"; }
 # listeners succeed and curl's 127.0.0.1 hits the wrong stack. Distinct
 # ports, plus --address 127.0.0.1 in ensure_forward, keep the two runs
 # from crossing over.
-DEMO_SUBJECT_URL="http://127.0.0.1:${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
 ISSUER_LOCAL_PORT="${ZT2_ISSUER_LOCAL_PORT:-19180}"
 ISSUER_LOCAL="http://127.0.0.1:$ISSUER_LOCAL_PORT"
 ENGINEERING_LOCAL_PORT="${ZT2_ENGINEERING_LOCAL_PORT:-19101}"
@@ -235,8 +233,11 @@ fetch_supervisor_svid() {
 # container locator cannot reliably attribute ephemeral containers, so
 # the fetch fails.)
 fetch_gateway_svid() {
+    local audience="${ZT2_SVID_AUDIENCE:-http://token-issuer.zt-demo.svc:8080}"
     oc -n openshell delete pod zt2-gw-svid --ignore-not-found >/dev/null 2>&1 || true
-    oc -n openshell apply -f "$ROOT/deploy/openshift/svid-helper-gateway.yaml" >/dev/null
+    sed "s|@SVID_AUDIENCE@|$audience|" \
+        "$ROOT/deploy/openshift/svid-helper-gateway.yaml" |
+        oc -n openshell apply -f - >/dev/null
     local phase=""
     for _ in $(seq 1 30); do
         phase="$(oc -n openshell get pod zt2-gw-svid -o jsonpath='{.status.phase}' 2>/dev/null || true)"
@@ -285,17 +286,3 @@ fetch_rogue_svid() {
 ensure_forward "$ISSUER_LOCAL_PORT" service/token-issuer
 ensure_forward "$ENGINEERING_LOCAL_PORT" service/document-engineering
 ensure_forward "$FINANCE_LOCAL_PORT" service/document-finance
-
-# The minter forward is owned by setup.sh, but it dies when the issuer
-# rolls (a new pod replaces the forward's target) — restart it if the
-# listener is gone.
-DEMO_PORT="${TOKEN_ISSUER_DEMO_HOST_PORT:-18090}"
-if ! curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1; then
-    kill_pidfile "$STATE_DIR/openshift-forward.pid"
-    oc -n zt-demo port-forward --address 127.0.0.1 deployment/token-issuer "${DEMO_PORT}:8090" >/dev/null 2>&1 &
-    echo $! >"$STATE_DIR/openshift-forward.pid"
-    for _ in $(seq 1 15); do
-        curl -fsS --max-time 2 "http://127.0.0.1:${DEMO_PORT}/healthz" >/dev/null 2>&1 && break
-        sleep 2
-    done
-fi

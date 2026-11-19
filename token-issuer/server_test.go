@@ -114,9 +114,9 @@ func TestSubjectTokenForAlice(t *testing.T) {
 	if claims.String("demo_token_use") != tokens.UseUserSubject {
 		t.Errorf("demo_token_use: %v", claims["demo_token_use"])
 	}
-	depts := claims.StringSlice("departments")
+	depts := claims.StringSlice("groups")
 	if len(depts) != 2 || depts[0] != "engineering" || depts[1] != "finance" {
-		t.Errorf("departments: %v", depts)
+		t.Errorf("groups: %v", depts)
 	}
 	if !claims.HasAudience("openshell-gateway") || !claims.HasAudience("account") {
 		t.Errorf("aud: %v", claims["aud"])
